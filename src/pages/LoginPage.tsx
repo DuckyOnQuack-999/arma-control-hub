@@ -11,19 +11,34 @@ import { toast } from '@/hooks/use-toast';
 const LoginPage = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { login } = useAuthStore();
+  const { login, register } = useAuthStore();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) return;
+    if (isRegister && password !== confirmPassword) {
+      toast({ title: 'Passwords do not match', variant: 'destructive' });
+      return;
+    }
+    if (isRegister && password.length < 8) {
+      toast({ title: 'Password must be at least 8 characters', variant: 'destructive' });
+      return;
+    }
     setLoading(true);
     try {
-      await login(username, password);
+      if (isRegister) {
+        await register(username, password);
+        toast({ title: 'Account created', description: `Welcome, ${username}` });
+      } else {
+        await login(username, password);
+      }
       navigate('/dashboard');
     } catch {
-      toast({ title: 'Login failed', description: 'Invalid credentials', variant: 'destructive' });
+      toast({ title: isRegister ? 'Registration failed' : 'Login failed', description: 'Invalid credentials', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -45,6 +60,24 @@ const LoginPage = () => {
           </p>
         </CardHeader>
         <CardContent>
+          {/* Mode toggle */}
+          <div className="flex rounded-md border border-border mb-4 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setIsRegister(false)}
+              className={`flex-1 py-2 text-xs font-display tracking-wider transition-colors ${!isRegister ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
+            >
+              LOGIN
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsRegister(true)}
+              className={`flex-1 py-2 text-xs font-display tracking-wider transition-colors ${isRegister ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
+            >
+              REGISTER
+            </button>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
               <Label className="font-body">Username</Label>
@@ -66,11 +99,23 @@ const LoginPage = () => {
                 className="border-border bg-muted font-mono"
               />
             </div>
+            {isRegister && (
+              <div className="space-y-1.5">
+                <Label className="font-body">Confirm Password</Label>
+                <Input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="border-border bg-muted font-mono"
+                />
+              </div>
+            )}
             <Button type="submit" className="w-full font-display text-xs tracking-widest" disabled={loading}>
-              {loading ? 'AUTHENTICATING...' : 'ACCESS GRID'}
+              {loading ? (isRegister ? 'CREATING...' : 'AUTHENTICATING...') : (isRegister ? 'CREATE ACCOUNT' : 'ACCESS GRID')}
             </Button>
             <p className="text-center text-xs text-muted-foreground">
-              Demo: enter any username to login
+              {isRegister ? 'First user becomes admin' : 'Demo: enter any username to login'}
             </p>
           </form>
         </CardContent>

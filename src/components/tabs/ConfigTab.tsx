@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/data/mockApi';
 import { configKeys } from '@/data/mockData';
@@ -25,22 +25,34 @@ const sectionLabels: Record<ConfigSection, string> = {
 };
 
 const sections = Object.keys(sectionLabels) as ConfigSection[];
+const RAW_FILES = ['settings_custom.cfg', 'server_info.cfg', 'everytime.cfg'] as const;
 
 export default function ConfigTab({ serverId, serverStatus }: { serverId: number; serverStatus: ServerStatus }) {
   const [localConfig, setLocalConfig] = useState<Record<string, string>>({});
   const [rawContent, setRawContent] = useState('');
-  const [rawFile, setRawFile] = useState('settings_custom.cfg');
+  const [rawFile, setRawFile] = useState<string>('settings_custom.cfg');
   const [hasChanges, setHasChanges] = useState(false);
 
-  const { data: config, isLoading } = useQuery({
+  const { isLoading } = useQuery({
     queryKey: ['config', serverId],
     queryFn: async () => {
       const c = await api.getConfig(serverId);
       setLocalConfig(c);
-      setRawContent(Object.entries(c).map(([k, v]) => `${k} ${v}`).join('\n'));
       return c;
     },
   });
+
+  // Fetch raw content when file changes
+  const { data: rawData } = useQuery({
+    queryKey: ['raw-config', serverId, rawFile],
+    queryFn: () => api.getRawConfig(serverId, rawFile),
+  });
+
+  useEffect(() => {
+    if (rawData !== undefined) {
+      setRawContent(rawData);
+    }
+  }, [rawData]);
 
   if (isLoading) return <LoadingSpinner />;
 
@@ -153,8 +165,8 @@ export default function ConfigTab({ serverId, serverStatus }: { serverId: number
 
         <TabsContent value="raw" className="space-y-3">
           <div className="flex gap-2">
-            {['settings_custom.cfg', 'server_info.cfg', 'everytime.cfg'].map(f => (
-              <Button key={f} size="sm" variant={rawFile === f ? 'default' : 'outline'} onClick={() => setRawFile(f)}
+            {RAW_FILES.map(f => (
+              <Button key={f} size="sm" variant={rawFile === f ? 'default' : 'outline'} onClick={() => { setRawFile(f); setHasChanges(false); }}
                 className="font-mono text-xs">
                 {f}
               </Button>

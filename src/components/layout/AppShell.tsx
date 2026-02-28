@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { Outlet, useNavigate } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
 import { useAuthStore } from '@/stores/authStore';
 import {
-  LayoutDashboard, Server, Globe, Settings, Terminal, LogOut, Menu, X, ChevronDown,
+  LayoutDashboard, Globe, Settings, Terminal, LogOut, Menu, X, ChevronDown, Bell,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -50,8 +50,8 @@ export function AppShell() {
             <NavLink
               key={item.url}
               to={item.url}
-              className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-body font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              activeClassName="bg-primary/10 text-primary border border-primary/30"
+              className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-body font-medium text-muted-foreground transition-all hover:bg-muted hover:text-foreground"
+              activeClassName="bg-primary/10 text-primary border border-primary/30 shadow-[0_0_8px_hsl(var(--primary)/0.2)]"
               onClick={() => setSidebarOpen(false)}
             >
               <item.icon className="h-4 w-4" />
@@ -90,8 +90,15 @@ export function AppShell() {
             <Menu className="h-5 w-5" />
           </Button>
           <div className="flex-1" />
+          {/* Notification bell */}
+          <Button size="icon" variant="ghost" className="relative h-8 w-8">
+            <Bell className="h-4 w-4" />
+            <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">
+              3
+            </span>
+          </Button>
         </header>
-        <main className="flex-1 overflow-auto p-4 lg:p-6">
+        <main className="flex-1 overflow-auto p-4 lg:p-6 animate-in fade-in duration-200">
           <Outlet />
         </main>
       </div>

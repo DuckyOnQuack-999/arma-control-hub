@@ -1,5 +1,5 @@
-import { mockServers, mockPlayers, mockBans, mockEvents, mockMetrics, mockConsoleLines, mockBrowserServers, mockServerConfigs, mockUsers } from './mockData';
-import type { Server, Player, Ban, ServerEvent, MetricPoint, ConsoleLine, BrowserServer, User } from './types';
+import { mockServers, mockPlayers, mockBans, mockEvents, mockMetrics, mockConsoleLines, mockBrowserServers, mockServerConfigs, mockUsers, mockMapFiles } from './mockData';
+import type { Server, Player, Ban, ServerEvent, MetricPoint, ConsoleLine, BrowserServer, User, MapFile, UserRole } from './types';
 
 const delay = (ms = 300) => new Promise(r => setTimeout(r, ms));
 
@@ -187,5 +187,39 @@ export const api = {
   async getUsers(): Promise<User[]> {
     await delay();
     return [...mockUsers];
+  },
+
+  async changeUserRole(userId: number, role: UserRole): Promise<void> {
+    await delay();
+    const u = mockUsers.find(u => u.id === userId);
+    if (u) u.role = role;
+  },
+
+  async deleteUser(userId: number): Promise<void> {
+    await delay();
+    const idx = mockUsers.findIndex(u => u.id === userId);
+    if (idx >= 0) mockUsers.splice(idx, 1);
+  },
+
+  async addUser(username: string, _password: string, role: UserRole): Promise<User> {
+    await delay();
+    const user: User = { id: mockUsers.length + 10, username, role, createdAt: Math.floor(Date.now() / 1000) };
+    mockUsers.push(user);
+    return user;
+  },
+
+  // Maps
+  async getMaps(serverId: number): Promise<MapFile[]> {
+    await delay();
+    return [...(mockMapFiles[serverId] || [])];
+  },
+
+  async deleteMap(serverId: number, filename: string): Promise<void> {
+    await delay();
+    const maps = mockMapFiles[serverId];
+    if (maps) {
+      const idx = maps.findIndex(m => m.filename === filename);
+      if (idx >= 0) maps.splice(idx, 1);
+    }
   },
 };

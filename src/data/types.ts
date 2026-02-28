@@ -92,3 +92,9 @@ export interface BrowserServer {
   ping: number;
   gameType: string;
 }
+
+export interface MapFile {
+  filename: string;
+  sizeBytes: number;
+  modifiedAt: number;
+}
