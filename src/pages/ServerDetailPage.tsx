@@ -14,6 +14,7 @@ import LogsTab from '@/components/tabs/LogsTab';
 import MetricsTab from '@/components/tabs/MetricsTab';
 import ConfigTab from '@/components/tabs/ConfigTab';
 import OverviewTab from '@/components/tabs/OverviewTab';
+import MapsTab from '@/components/tabs/MapsTab';
 import { Users, Cpu, HardDrive, Clock } from 'lucide-react';
 
 const ServerDetailPage = () => {
@@ -92,6 +93,7 @@ const ServerDetailPage = () => {
           <TabsTrigger value="players">Players</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
           <TabsTrigger value="metrics">Metrics</TabsTrigger>
+          <TabsTrigger value="maps">Maps</TabsTrigger>
         </TabsList>
         <TabsContent value="overview"><OverviewTab server={server} /></TabsContent>
         <TabsContent value="console"><ConsoleTab serverId={serverId} /></TabsContent>
@@ -99,6 +101,7 @@ const ServerDetailPage = () => {
         <TabsContent value="players"><PlayersTab serverId={serverId} /></TabsContent>
         <TabsContent value="logs"><LogsTab serverId={serverId} /></TabsContent>
         <TabsContent value="metrics"><MetricsTab serverId={serverId} /></TabsContent>
+        <TabsContent value="maps"><MapsTab serverId={serverId} /></TabsContent>
       </Tabs>
     </div>
   );

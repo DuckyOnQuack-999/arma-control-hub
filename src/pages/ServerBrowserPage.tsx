@@ -4,10 +4,12 @@ import { api } from '@/data/mockApi';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
-import { RefreshCw, Copy, ArrowUpDown } from 'lucide-react';
+import { RefreshCw, Copy, ArrowUpDown, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
+import type { BrowserServer } from '@/data/types';
 
 type SortKey = 'name' | 'map' | 'players' | 'ping' | 'gameType';
 
@@ -15,6 +17,7 @@ const ServerBrowserPage = () => {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('players');
   const [sortAsc, setSortAsc] = useState(false);
+  const [inspectServer, setInspectServer] = useState<BrowserServer | null>(null);
 
   const { data: servers = [], isLoading, refetch, dataUpdatedAt } = useQuery({
     queryKey: ['browser-servers'],
@@ -101,7 +104,10 @@ const ServerBrowserPage = () => {
                   </span>
                 </TableCell>
                 <TableCell className="text-sm">{sv.gameType}</TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right space-x-1">
+                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setInspectServer(sv)}>
+                    <Search className="h-3.5 w-3.5" />
+                  </Button>
                   <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => copyUri(sv.host, sv.port)}>
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
@@ -111,6 +117,38 @@ const ServerBrowserPage = () => {
           </TableBody>
         </Table>
       </div>
+
+      {/* Inspect Modal */}
+      <Dialog open={!!inspectServer} onOpenChange={() => setInspectServer(null)}>
+        <DialogContent className="border-border bg-card max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-sm tracking-wide">{inspectServer?.name}</DialogTitle>
+          </DialogHeader>
+          {inspectServer && (
+            <div className="space-y-3 text-sm">
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  ['Host', `${inspectServer.host}:${inspectServer.port}`],
+                  ['Map', inspectServer.map],
+                  ['Players', `${inspectServer.players} / ${inspectServer.maxPlayers}`],
+                  ['Ping', `${inspectServer.ping}ms`],
+                  ['Game Type', inspectServer.gameType],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <span className="text-xs text-muted-foreground">{label}</span>
+                    <p className="font-mono text-xs">{value}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button size="sm" className="flex-1" onClick={() => { copyUri(inspectServer.host, inspectServer.port); }}>
+                  <Copy className="h-3.5 w-3.5 mr-1" /> Copy URI
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

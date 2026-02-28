@@ -266,3 +266,21 @@ export const mockServerConfigs: Record<number, Record<string, string>> = {
     NUM_AIS: '4',
   },
 };
+
+const now2 = Math.floor(Date.now() / 1000);
+export const mockMapFiles: Record<number, import('./types').MapFile[]> = {
+  1: [
+    { filename: 'fortress/classic-1.0.1.aamap.xml', sizeBytes: 12480, modifiedAt: now2 - 86400 * 10 },
+    { filename: 'fortress/classic-1.0.1.cfg', sizeBytes: 2340, modifiedAt: now2 - 86400 * 10 },
+    { filename: 'resources/cockpit.xml', sizeBytes: 8912, modifiedAt: now2 - 86400 * 5 },
+  ],
+  2: [
+    { filename: 'sumo/default-1.0.aamap.xml', sizeBytes: 9800, modifiedAt: now2 - 86400 * 15 },
+    { filename: 'sumo/default-1.0.cfg', sizeBytes: 1560, modifiedAt: now2 - 86400 * 15 },
+  ],
+  3: [
+    { filename: 'ctf/two-bases.aamap.xml', sizeBytes: 18200, modifiedAt: now2 - 86400 * 3 },
+    { filename: 'ctf/two-bases.cfg', sizeBytes: 3100, modifiedAt: now2 - 86400 * 3 },
+    { filename: 'resources/team-colors.cfg', sizeBytes: 450, modifiedAt: now2 - 86400 * 1 },
+  ],
+};
