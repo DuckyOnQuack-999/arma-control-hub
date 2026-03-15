@@ -14,16 +14,319 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      bans: {
+        Row: {
+          banned_by: string
+          created_at: string
+          expires_at: string | null
+          id: number
+          ip_address: string | null
+          player_name: string
+          reason: string
+          server_id: number
+        }
+        Insert: {
+          banned_by?: string
+          created_at?: string
+          expires_at?: string | null
+          id?: number
+          ip_address?: string | null
+          player_name: string
+          reason?: string
+          server_id: number
+        }
+        Update: {
+          banned_by?: string
+          created_at?: string
+          expires_at?: string | null
+          id?: number
+          ip_address?: string | null
+          player_name?: string
+          reason?: string
+          server_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bans_server_id_fkey"
+            columns: ["server_id"]
+            isOneToOne: false
+            referencedRelation: "servers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      map_files: {
+        Row: {
+          created_at: string
+          filename: string
+          id: number
+          server_id: number
+          size_bytes: number
+          storage_path: string | null
+        }
+        Insert: {
+          created_at?: string
+          filename: string
+          id?: number
+          server_id: number
+          size_bytes?: number
+          storage_path?: string | null
+        }
+        Update: {
+          created_at?: string
+          filename?: string
+          id?: number
+          server_id?: number
+          size_bytes?: number
+          storage_path?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "map_files_server_id_fkey"
+            columns: ["server_id"]
+            isOneToOne: false
+            referencedRelation: "servers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      metrics: {
+        Row: {
+          cpu_percent: number
+          id: number
+          memory_mb: number
+          player_count: number
+          recorded_at: string
+          server_id: number
+        }
+        Insert: {
+          cpu_percent?: number
+          id?: number
+          memory_mb?: number
+          player_count?: number
+          recorded_at?: string
+          server_id: number
+        }
+        Update: {
+          cpu_percent?: number
+          id?: number
+          memory_mb?: number
+          player_count?: number
+          recorded_at?: string
+          server_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "metrics_server_id_fkey"
+            columns: ["server_id"]
+            isOneToOne: false
+            referencedRelation: "servers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      players: {
+        Row: {
+          id: number
+          ip_address: string | null
+          is_online: boolean
+          joined_at: string
+          name: string
+          ping: number
+          score: number
+          server_id: number
+        }
+        Insert: {
+          id?: number
+          ip_address?: string | null
+          is_online?: boolean
+          joined_at?: string
+          name: string
+          ping?: number
+          score?: number
+          server_id: number
+        }
+        Update: {
+          id?: number
+          ip_address?: string | null
+          is_online?: boolean
+          joined_at?: string
+          name?: string
+          ping?: number
+          score?: number
+          server_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "players_server_id_fkey"
+            columns: ["server_id"]
+            isOneToOne: false
+            referencedRelation: "servers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      server_configs: {
+        Row: {
+          filename: string
+          id: number
+          key: string
+          server_id: number
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          filename?: string
+          id?: number
+          key: string
+          server_id: number
+          updated_at?: string
+          value?: string
+        }
+        Update: {
+          filename?: string
+          id?: number
+          key?: string
+          server_id?: number
+          updated_at?: string
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "server_configs_server_id_fkey"
+            columns: ["server_id"]
+            isOneToOne: false
+            referencedRelation: "servers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      server_events: {
+        Row: {
+          event_type: string
+          id: number
+          occurred_at: string
+          payload: Json | null
+          server_id: number
+        }
+        Insert: {
+          event_type: string
+          id?: number
+          occurred_at?: string
+          payload?: Json | null
+          server_id: number
+        }
+        Update: {
+          event_type?: string
+          id?: number
+          occurred_at?: string
+          payload?: Json | null
+          server_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "server_events_server_id_fkey"
+            columns: ["server_id"]
+            isOneToOne: false
+            referencedRelation: "servers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      servers: {
+        Row: {
+          auto_restart: boolean
+          config_dir: string
+          cpu_percent: number
+          created_at: string
+          current_map: string | null
+          data_dir: string
+          executable_path: string
+          id: number
+          max_players: number
+          memory_mb: number
+          name: string
+          player_count: number
+          port: number
+          status: string
+          updated_at: string
+          uptime: number
+        }
+        Insert: {
+          auto_restart?: boolean
+          config_dir?: string
+          cpu_percent?: number
+          created_at?: string
+          current_map?: string | null
+          data_dir?: string
+          executable_path?: string
+          id?: number
+          max_players?: number
+          memory_mb?: number
+          name: string
+          player_count?: number
+          port?: number
+          status?: string
+          updated_at?: string
+          uptime?: number
+        }
+        Update: {
+          auto_restart?: boolean
+          config_dir?: string
+          cpu_percent?: number
+          created_at?: string
+          current_map?: string | null
+          data_dir?: string
+          executable_path?: string
+          id?: number
+          max_players?: number
+          memory_mb?: number
+          name?: string
+          player_count?: number
+          port?: number
+          status?: string
+          updated_at?: string
+          uptime?: number
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_user_role: {
+        Args: { _user_id: string }
+        Returns: Database["public"]["Enums"]["app_role"]
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "moderator" | "viewer"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +453,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "moderator", "viewer"],
+    },
   },
 } as const
