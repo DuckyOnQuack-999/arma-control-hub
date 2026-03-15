@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ServerCard } from '@/components/server/ServerCard';
 import { CreateServerModal } from '@/components/server/CreateServerModal';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { useServerStore } from '@/stores/serverStore';
-import { api } from '@/data/mockApi';
+import { getServers } from '@/lib/supabaseApi';
+import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 
 const DashboardPage = () => {
@@ -15,15 +16,26 @@ const DashboardPage = () => {
   const { isLoading, refetch } = useQuery({
     queryKey: ['servers'],
     queryFn: async () => {
-      const data = await api.getServers();
+      const data = await getServers();
       setServers(data);
       return data;
     },
-    refetchInterval: 10000,
   });
 
+  // Real-time subscription for server status updates
+  useEffect(() => {
+    const channel = supabase
+      .channel('servers-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'servers' }, () => {
+        refetch();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [refetch]);
+
   const onlineCount = servers.filter(s => s.status === 'online').length;
-  const totalPlayers = servers.reduce((sum, s) => sum + s.playerCount, 0);
+  const totalPlayers = servers.reduce((sum, s) => sum + s.player_count, 0);
 
   if (isLoading && servers.length === 0) return <LoadingSpinner />;
 
@@ -47,7 +59,7 @@ const DashboardPage = () => {
         ))}
       </div>
 
-      {servers.length === 0 && (
+      {servers.length === 0 && !isLoading && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <p className="text-muted-foreground mb-4">No servers configured yet</p>
           <Button onClick={() => setShowCreate(true)}>

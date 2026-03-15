@@ -1,13 +1,13 @@
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '@/data/mockApi';
+import { getServer, updateServer } from '@/lib/supabaseApi';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ServerStatusBadge } from '@/components/server/ServerStatusBadge';
 import { ServerControlBar } from '@/components/server/ServerControlBar';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
-import { useServerStore } from '@/stores/serverStore';
 import { toast } from '@/hooks/use-toast';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import ConsoleTab from '@/components/tabs/ConsoleTab';
 import PlayersTab from '@/components/tabs/PlayersTab';
 import LogsTab from '@/components/tabs/LogsTab';
@@ -16,29 +16,42 @@ import ConfigTab from '@/components/tabs/ConfigTab';
 import OverviewTab from '@/components/tabs/OverviewTab';
 import MapsTab from '@/components/tabs/MapsTab';
 import { Users, Cpu, HardDrive, Clock } from 'lucide-react';
+import type { ServerStatus } from '@/data/types';
 
 const ServerDetailPage = () => {
   const { id } = useParams<{ id: string }>();
   const serverId = Number(id);
   const [loading, setLoading] = useState(false);
-  const updateServer = useServerStore(s => s.updateServer);
 
-  const { data: server, isLoading } = useQuery({
+  const { data: server, isLoading, refetch } = useQuery({
     queryKey: ['server', serverId],
-    queryFn: () => api.getServer(serverId),
-    refetchInterval: 5000,
+    queryFn: () => getServer(serverId),
   });
+
+  // Real-time updates for this server
+  useEffect(() => {
+    const channel = supabase
+      .channel(`server-${serverId}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'servers', filter: `id=eq.${serverId}` }, () => {
+        refetch();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [serverId, refetch]);
 
   if (isLoading || !server) return <LoadingSpinner />;
 
   const handleAction = async (action: 'start' | 'stop' | 'restart' | 'kill') => {
     setLoading(true);
     try {
-      if (action === 'start') { await api.startServer(serverId); updateServer(serverId, { status: 'online' }); }
-      else if (action === 'stop') { await api.stopServer(serverId); updateServer(serverId, { status: 'offline' }); }
-      else if (action === 'restart') { await api.restartServer(serverId); updateServer(serverId, { status: 'online' }); }
-      else { await api.stopServer(serverId); updateServer(serverId, { status: 'offline' }); }
+      const statusMap: Record<string, ServerStatus> = {
+        start: 'online', stop: 'offline', restart: 'online', kill: 'offline',
+      };
+      await updateServer(serverId, { status: statusMap[action] });
+      refetch();
       toast({ title: `Server ${action}ed`, description: `${server.name} action completed` });
+    } catch (err: any) {
+      toast({ title: 'Action failed', description: err?.message, variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -54,10 +67,10 @@ const ServerDetailPage = () => {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <h1 className="font-display text-xl font-bold tracking-wide">{server.name}</h1>
-          <ServerStatusBadge status={server.status} />
+          <ServerStatusBadge status={server.status as ServerStatus} />
         </div>
         <ServerControlBar
-          status={server.status}
+          status={server.status as ServerStatus}
           onStart={() => handleAction('start')}
           onStop={() => handleAction('stop')}
           onRestart={() => handleAction('restart')}
@@ -69,9 +82,9 @@ const ServerDetailPage = () => {
       {server.status === 'online' && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
-            { icon: Users, label: 'Players', value: `${server.playerCount} / ${server.maxPlayers}`, color: 'text-primary' },
-            { icon: Cpu, label: 'CPU', value: `${server.cpuPercent.toFixed(1)}%`, color: 'text-neon-red' },
-            { icon: HardDrive, label: 'Memory', value: `${server.memoryMb.toFixed(0)} MB`, color: 'text-neon-blue' },
+            { icon: Users, label: 'Players', value: `${server.player_count} / ${server.max_players}`, color: 'text-primary' },
+            { icon: Cpu, label: 'CPU', value: `${server.cpu_percent.toFixed(1)}%`, color: 'text-neon-red' },
+            { icon: HardDrive, label: 'Memory', value: `${server.memory_mb.toFixed(0)} MB`, color: 'text-neon-blue' },
             { icon: Clock, label: 'Uptime', value: formatUptime(server.uptime), color: 'text-neon-green' },
           ].map(stat => (
             <div key={stat.label} className="rounded-lg border border-border bg-card p-3">
@@ -97,7 +110,7 @@ const ServerDetailPage = () => {
         </TabsList>
         <TabsContent value="overview"><OverviewTab server={server} /></TabsContent>
         <TabsContent value="console"><ConsoleTab serverId={serverId} /></TabsContent>
-        <TabsContent value="config"><ConfigTab serverId={serverId} serverStatus={server.status} /></TabsContent>
+        <TabsContent value="config"><ConfigTab serverId={serverId} serverStatus={server.status as ServerStatus} /></TabsContent>
         <TabsContent value="players"><PlayersTab serverId={serverId} /></TabsContent>
         <TabsContent value="logs"><LogsTab serverId={serverId} /></TabsContent>
         <TabsContent value="metrics"><MetricsTab serverId={serverId} /></TabsContent>

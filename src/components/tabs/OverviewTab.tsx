@@ -1,7 +1,7 @@
-import type { Server } from '@/data/types';
+import type { Server, ServerStatus } from '@/data/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ServerStatusBadge } from '@/components/server/ServerStatusBadge';
-import { Map, Clock, Users, Cpu, HardDrive, Wifi } from 'lucide-react';
+import { Map, Clock, Users, Cpu, HardDrive } from 'lucide-react';
 
 export default function OverviewTab({ server }: { server: Server }) {
   const formatUptime = (s: number) => {
@@ -14,10 +14,10 @@ export default function OverviewTab({ server }: { server: Server }) {
       <Card className="border-border bg-card">
         <CardHeader><CardTitle className="font-display text-sm">Server Info</CardTitle></CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <div className="flex justify-between"><span className="text-muted-foreground">Status</span><ServerStatusBadge status={server.status} /></div>
+          <div className="flex justify-between"><span className="text-muted-foreground">Status</span><ServerStatusBadge status={server.status as ServerStatus} /></div>
           <div className="flex justify-between"><span className="text-muted-foreground">Port</span><span className="font-mono">{server.port}</span></div>
-          <div className="flex justify-between"><span className="text-muted-foreground">Auto Restart</span><span>{server.autoRestart ? 'Enabled' : 'Disabled'}</span></div>
-          <div className="flex justify-between"><span className="text-muted-foreground">Executable</span><span className="font-mono text-xs truncate max-w-48">{server.executablePath}</span></div>
+          <div className="flex justify-between"><span className="text-muted-foreground">Auto Restart</span><span>{server.auto_restart ? 'Enabled' : 'Disabled'}</span></div>
+          <div className="flex justify-between"><span className="text-muted-foreground">Executable</span><span className="font-mono text-xs truncate max-w-48">{server.executable_path}</span></div>
         </CardContent>
       </Card>
 
@@ -26,7 +26,7 @@ export default function OverviewTab({ server }: { server: Server }) {
         <CardContent className="space-y-3 text-sm">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-2 text-muted-foreground"><Map className="h-3.5 w-3.5" /> Map</span>
-            <span className="font-mono text-xs">{server.currentMap || 'N/A'}</span>
+            <span className="font-mono text-xs">{server.current_map || 'N/A'}</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-2 text-muted-foreground"><Clock className="h-3.5 w-3.5" /> Uptime</span>
@@ -34,15 +34,15 @@ export default function OverviewTab({ server }: { server: Server }) {
           </div>
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-2 text-muted-foreground"><Users className="h-3.5 w-3.5" /> Players</span>
-            <span>{server.playerCount} / {server.maxPlayers}</span>
+            <span>{server.player_count} / {server.max_players}</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-2 text-muted-foreground"><Cpu className="h-3.5 w-3.5" /> CPU</span>
-            <span>{server.cpuPercent.toFixed(1)}%</span>
+            <span>{server.cpu_percent.toFixed(1)}%</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-2 text-muted-foreground"><HardDrive className="h-3.5 w-3.5" /> Memory</span>
-            <span>{server.memoryMb.toFixed(0)} MB</span>
+            <span>{server.memory_mb.toFixed(0)} MB</span>
           </div>
         </CardContent>
       </Card>

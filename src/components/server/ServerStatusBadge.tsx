@@ -6,6 +6,7 @@ const statusConfig: Record<ServerStatus, { label: string; className: string }> =
   offline: { label: 'Offline', className: 'bg-neon-red/20 text-neon-red border-neon-red/50' },
   starting: { label: 'Starting', className: 'bg-neon-yellow/20 text-neon-yellow border-neon-yellow/50 animate-pulse-glow' },
   stopping: { label: 'Stopping', className: 'bg-neon-yellow/20 text-neon-yellow border-neon-yellow/50 animate-pulse-glow' },
+  crashed: { label: 'Crashed', className: 'bg-neon-red/20 text-neon-red border-neon-red/50 animate-pulse-glow' },
 };
 
 export function ServerStatusBadge({ status }: { status: ServerStatus }) {

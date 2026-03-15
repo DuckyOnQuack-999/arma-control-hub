@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/data/mockApi';
+import { getMaps, deleteMap, uploadMap } from '@/lib/supabaseApi';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
@@ -11,24 +11,41 @@ import type { MapFile } from '@/data/types';
 
 export default function MapsTab({ serverId }: { serverId: number }) {
   const [deleteTarget, setDeleteTarget] = useState<MapFile | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
   const { data: maps = [], isLoading } = useQuery({
     queryKey: ['maps', serverId],
-    queryFn: () => api.getMaps(serverId),
+    queryFn: () => getMaps(serverId),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (filename: string) => api.deleteMap(serverId, filename),
+    mutationFn: (filename: string) => deleteMap(serverId, filename),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['maps', serverId] });
       toast({ title: 'Map deleted' });
       setDeleteTarget(null);
     },
+    onError: (err: any) => toast({ title: 'Failed', description: err?.message, variant: 'destructive' }),
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: (file: File) => uploadMap(serverId, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['maps', serverId] });
+      toast({ title: 'Map uploaded' });
+    },
+    onError: (err: any) => toast({ title: 'Upload failed', description: err?.message, variant: 'destructive' }),
   });
 
   const handleUpload = () => {
-    toast({ title: 'Upload triggered', description: 'File upload will be available when connected to a real backend' });
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) uploadMutation.mutate(file);
+    e.target.value = '';
   };
 
   const formatSize = (bytes: number) => {
@@ -43,9 +60,12 @@ export default function MapsTab({ serverId }: { serverId: number }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="font-display text-sm tracking-wide">Maps & Resources</h3>
-        <Button size="sm" onClick={handleUpload}>
-          <Upload className="h-3.5 w-3.5 mr-1" /> Upload
-        </Button>
+        <div>
+          <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} accept=".xml,.aamap.xml,.cfg,.txt" />
+          <Button size="sm" onClick={handleUpload} disabled={uploadMutation.isPending}>
+            <Upload className="h-3.5 w-3.5 mr-1" /> Upload
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-lg border border-border overflow-hidden">
@@ -54,7 +74,7 @@ export default function MapsTab({ serverId }: { serverId: number }) {
             <TableRow className="border-border hover:bg-transparent">
               <TableHead>File</TableHead>
               <TableHead>Size</TableHead>
-              <TableHead>Modified</TableHead>
+              <TableHead>Uploaded</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -71,9 +91,9 @@ export default function MapsTab({ serverId }: { serverId: number }) {
                     <span className="font-mono text-xs">{m.filename}</span>
                   </div>
                 </TableCell>
-                <TableCell className="text-xs text-muted-foreground">{formatSize(m.sizeBytes)}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{formatSize(m.size_bytes)}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {new Date(m.modifiedAt * 1000).toLocaleDateString()}
+                  {new Date(m.created_at).toLocaleDateString()}
                 </TableCell>
                 <TableCell className="text-right">
                   <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setDeleteTarget(m)}>

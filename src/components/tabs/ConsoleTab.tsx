@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { useConsoleStore } from '@/stores/consoleStore';
-import { api } from '@/data/mockApi';
+import { sendCommand } from '@/lib/supabaseApi';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Trash2, Download, Wifi, WifiOff, RefreshCw } from 'lucide-react';
@@ -35,23 +36,21 @@ const ARMA_COMMANDS = [
   'WIN_ZONE_DEATHS', 'WIN_ZONE_EXPAND', 'WIN_ZONE_RANDOMNESS',
 ];
 
-const simulatedLines: Array<{ type: ConsoleLineType; text: string }> = [
-  { type: 'kill', text: '[KILL] CyberViper core-dumped NeonRider' },
-  { type: 'chat', text: '[CHAT] GridMaster: gg!' },
-  { type: 'system', text: '[ROUND] New round starting — players alive' },
-  { type: 'join', text: '[JOIN] NewPlayer entered the grid from 10.0.0.99' },
-  { type: 'kill', text: '[KILL] NeonRider core-dumped ByteRunner' },
-  { type: 'chat', text: '[CHAT] LightCycle_X: nice wall!' },
-  { type: 'warning', text: '[WARN] Player lag detected: ByteRunner 200ms' },
-  { type: 'leave', text: '[LEAVE] NewPlayer left the grid' },
-  { type: 'system', text: '[ROUND] CyberViper wins! Score: 5' },
-  { type: 'info', text: '[SERVER] Heartbeat sent to master server' },
-];
+// Map event types from server_events to console line types
+function eventToLineType(eventType: string): ConsoleLineType {
+  const map: Record<string, ConsoleLineType> = {
+    player_join: 'join', player_leave: 'leave', kill: 'kill',
+    chat: 'chat', ban: 'warning', kick: 'warning',
+    crash: 'error', start: 'info', stop: 'info',
+    restart: 'info', round_end: 'system', command: 'system',
+  };
+  return map[eventType] || 'system';
+}
 
 let lineIdCounter = 100;
 
 export default function ConsoleTab({ serverId }: { serverId: number }) {
-  const { lines, addLine, addLines, clearLines } = useConsoleStore();
+  const { lines, addLine, clearLines } = useConsoleStore();
   const [command, setCommand] = useState('');
   const [connected, setConnected] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -66,26 +65,54 @@ export default function ConsoleTab({ serverId }: { serverId: number }) {
     return ARMA_COMMANDS.filter(c => c.startsWith(upper)).slice(0, 8);
   }, [command]);
 
+  // Subscribe to real-time server events for this server
   useEffect(() => {
     clearLines();
-    const history = api.getConsoleHistory();
-    addLines(history);
-  }, [serverId]);
 
-  useEffect(() => {
-    if (!connected) return;
-    const interval = setInterval(() => {
-      const sim = simulatedLines[Math.floor(Math.random() * simulatedLines.length)];
-      const line: ConsoleLine = {
-        id: lineIdCounter++,
-        timestamp: Math.floor(Date.now() / 1000),
-        type: sim.type,
-        text: sim.text,
-      };
-      addLine(line);
-    }, 2000 + Math.random() * 3000);
-    return () => clearInterval(interval);
-  }, [connected, addLine]);
+    // Load recent events as console history
+    const loadHistory = async () => {
+      const { data } = await supabase
+        .from('server_events')
+        .select('*')
+        .eq('server_id', serverId)
+        .order('occurred_at', { ascending: false })
+        .limit(50);
+
+      if (data) {
+        const consolelines: ConsoleLine[] = data.reverse().map(e => ({
+          id: lineIdCounter++,
+          timestamp: new Date(e.occurred_at).getTime() / 1000,
+          type: eventToLineType(e.event_type),
+          text: `[${e.event_type.toUpperCase()}] ${JSON.stringify(e.payload)}`,
+        }));
+        consolelines.forEach(l => addLine(l));
+      }
+    };
+    loadHistory();
+
+    // Real-time subscription
+    const channel = supabase
+      .channel(`console-${serverId}`)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'server_events',
+        filter: `server_id=eq.${serverId}`,
+      }, (payload) => {
+        const e = payload.new as any;
+        const line: ConsoleLine = {
+          id: lineIdCounter++,
+          timestamp: new Date(e.occurred_at).getTime() / 1000,
+          type: eventToLineType(e.event_type),
+          text: `[${e.event_type.toUpperCase()}] ${JSON.stringify(e.payload)}`,
+        };
+        addLine(line);
+        setConnected(true);
+      })
+      .subscribe((status) => {
+        setConnected(status === 'SUBSCRIBED');
+      });
+
+    return () => { supabase.removeChannel(channel); };
+  }, [serverId]);
 
   useEffect(() => {
     if (autoScroll && outputRef.current) {
@@ -104,12 +131,12 @@ export default function ConsoleTab({ serverId }: { serverId: number }) {
     addCommand(command);
     const line: ConsoleLine = {
       id: lineIdCounter++,
-      timestamp: Math.floor(Date.now() / 1000),
+      timestamp: Date.now() / 1000,
       type: 'system',
       text: `> ${command}`,
     };
     addLine(line);
-    await api.sendCommand(serverId, command);
+    await sendCommand(serverId, command);
     setCommand('');
     setShowSuggestions(false);
   };
@@ -148,20 +175,19 @@ export default function ConsoleTab({ serverId }: { serverId: number }) {
 
   const handleReconnect = () => {
     setConnected(true);
-    toast({ title: 'Reconnected', description: 'Console stream re-established' });
+    toast({ title: 'Reconnecting...', description: 'Re-subscribing to console stream' });
   };
 
   const formatTime = (ts: number) => new Date(ts * 1000).toLocaleTimeString();
 
   return (
     <div className="flex flex-col h-[600px] rounded-lg border border-border bg-card overflow-hidden">
-      {/* Toolbar */}
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <div className="flex items-center gap-2 text-xs">
           {connected ? (
-            <button onClick={() => setConnected(false)} className="flex items-center gap-1.5 text-neon-green hover:opacity-80">
+            <span className="flex items-center gap-1.5 text-neon-green">
               <Wifi className="h-3.5 w-3.5" /> Connected
-            </button>
+            </span>
           ) : (
             <span className="flex items-center gap-1.5 text-neon-red"><WifiOff className="h-3.5 w-3.5" /> Disconnected</span>
           )}
@@ -182,7 +208,6 @@ export default function ConsoleTab({ serverId }: { serverId: number }) {
         </div>
       </div>
 
-      {/* Output */}
       <div ref={outputRef} onScroll={handleScroll} className="flex-1 overflow-auto p-3 font-mono text-xs leading-5">
         {lines.map(line => (
           <div key={line.id} className="flex gap-2">
@@ -192,9 +217,7 @@ export default function ConsoleTab({ serverId }: { serverId: number }) {
         ))}
       </div>
 
-      {/* Input */}
       <div className="relative border-t border-border p-2">
-        {/* Suggestions dropdown */}
         {showSuggestions && suggestions.length > 0 && (
           <div className="absolute bottom-full left-0 right-0 mx-2 mb-1 rounded-md border border-border bg-popover shadow-md overflow-hidden z-10">
             {suggestions.map(s => (

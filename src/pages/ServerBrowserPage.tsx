@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '@/data/mockApi';
+import { getBrowserServers } from '@/lib/supabaseApi';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -21,7 +21,7 @@ const ServerBrowserPage = () => {
 
   const { data: servers = [], isLoading, refetch, dataUpdatedAt } = useQuery({
     queryKey: ['browser-servers'],
-    queryFn: () => api.getBrowserServers(),
+    queryFn: getBrowserServers,
   });
 
   const filtered = useMemo(() => {
@@ -63,7 +63,10 @@ const ServerBrowserPage = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-2xl font-bold tracking-wide">Server Browser</h1>
-          <p className="text-sm text-muted-foreground">{servers.length} servers · Last refreshed {lastRefreshed}</p>
+          <p className="text-sm text-muted-foreground">
+            {servers.length} servers · Last refreshed {lastRefreshed}
+            {servers.length === 0 && ' · Server browser requires an external master server query agent'}
+          </p>
         </div>
         <Button onClick={() => refetch()} variant="outline" size="sm">
           <RefreshCw className="h-3.5 w-3.5 mr-1" /> Refresh
@@ -88,6 +91,9 @@ const ServerBrowserPage = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
+            {filtered.length === 0 && (
+              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">No servers found</TableCell></TableRow>
+            )}
             {filtered.map(sv => (
               <TableRow key={sv.id} className="border-border">
                 <TableCell className="font-semibold max-w-64 truncate">{sv.name}</TableCell>
@@ -118,7 +124,6 @@ const ServerBrowserPage = () => {
         </Table>
       </div>
 
-      {/* Inspect Modal */}
       <Dialog open={!!inspectServer} onOpenChange={() => setInspectServer(null)}>
         <DialogContent className="border-border bg-card max-w-md">
           <DialogHeader>

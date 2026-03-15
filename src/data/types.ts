@@ -1,60 +1,28 @@
-export type ServerStatus = 'online' | 'offline' | 'starting' | 'stopping';
-export type UserRole = 'admin' | 'operator' | 'viewer';
+// Types derived from Supabase schema — used across the app
+import type { Tables, Enums } from '@/integrations/supabase/types';
+
+// Re-export DB row types with friendlier names
+export type Server = Tables<'servers'>;
+export type Ban = Tables<'bans'>;
+export type MapFile = Tables<'map_files'>;
+export type MetricRow = Tables<'metrics'>;
+export type Player = Tables<'players'>;
+export type ServerConfig = Tables<'server_configs'>;
+export type ServerEvent = Tables<'server_events'>;
+export type UserRole = Enums<'app_role'>;
+
+// Derived types for UI
+export type ServerStatus = 'online' | 'offline' | 'starting' | 'stopping' | 'crashed';
 export type EventType = 'start' | 'stop' | 'crash' | 'restart' | 'player_join' | 'player_leave' | 'kill' | 'ban' | 'chat' | 'round_end' | 'kick';
 export type ConsoleLineType = 'error' | 'warning' | 'join' | 'leave' | 'chat' | 'system' | 'kill' | 'info';
 export type ConfigValueType = 'int' | 'float' | 'string' | 'bool';
 export type ConfigSection = 'gameplay' | 'network' | 'physics' | 'scoring' | 'admin' | 'misc';
 
-export interface User {
+export interface ConsoleLine {
   id: number;
-  username: string;
-  role: UserRole;
-  createdAt: number;
-}
-
-export interface Server {
-  id: number;
-  name: string;
-  executablePath: string;
-  dataDir: string;
-  configDir: string;
-  port: number;
-  autoRestart: boolean;
-  maxPlayers: number;
-  createdAt: number;
-  status: ServerStatus;
-  currentMap: string;
-  playerCount: number;
-  cpuPercent: number;
-  memoryMb: number;
-  uptime: number;
-}
-
-export interface Player {
-  name: string;
-  ip: string;
-  score: number;
-  ping: number;
-  joinTime: number;
-}
-
-export interface Ban {
-  id: number;
-  serverId: number;
-  playerName: string;
-  ipAddress: string;
-  reason: string;
-  bannedBy: string;
-  expiresAt: number | null;
-  createdAt: number;
-}
-
-export interface ServerEvent {
-  id: number;
-  serverId: number;
-  eventType: EventType;
-  payload: Record<string, string>;
-  occurredAt: number;
+  timestamp: number;
+  type: ConsoleLineType;
+  text: string;
 }
 
 export interface MetricPoint {
@@ -62,13 +30,6 @@ export interface MetricPoint {
   cpu: number;
   memory: number;
   players: number;
-}
-
-export interface ConsoleLine {
-  id: number;
-  timestamp: number;
-  type: ConsoleLineType;
-  text: string;
 }
 
 export interface ConfigKeyMeta {
@@ -93,8 +54,9 @@ export interface BrowserServer {
   gameType: string;
 }
 
-export interface MapFile {
-  filename: string;
-  sizeBytes: number;
-  modifiedAt: number;
+// User info for auth store
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: UserRole;
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '@/data/mockApi';
-import { configKeys } from '@/data/mockData';
+import { getConfig, saveConfig, getRawConfig, saveRawConfig } from '@/lib/supabaseApi';
+import { configKeys } from '@/data/configKeys';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Input } from '@/components/ui/input';
@@ -36,16 +36,15 @@ export default function ConfigTab({ serverId, serverStatus }: { serverId: number
   const { isLoading } = useQuery({
     queryKey: ['config', serverId],
     queryFn: async () => {
-      const c = await api.getConfig(serverId);
+      const c = await getConfig(serverId);
       setLocalConfig(c);
       return c;
     },
   });
 
-  // Fetch raw content when file changes
   const { data: rawData } = useQuery({
     queryKey: ['raw-config', serverId, rawFile],
-    queryFn: () => api.getRawConfig(serverId, rawFile),
+    queryFn: () => getRawConfig(serverId, rawFile),
   });
 
   useEffect(() => {
@@ -62,13 +61,13 @@ export default function ConfigTab({ serverId, serverStatus }: { serverId: number
   };
 
   const handleSave = async () => {
-    await api.saveConfig(serverId, localConfig);
+    await saveConfig(serverId, localConfig);
     setHasChanges(false);
     toast({ title: 'Config saved', description: serverStatus === 'online' ? 'Changes will take effect next round' : 'Configuration updated' });
   };
 
   const handleSaveRaw = async () => {
-    await api.saveRawConfig(serverId, rawFile, rawContent);
+    await saveRawConfig(serverId, rawFile, rawContent);
     setHasChanges(false);
     toast({ title: 'Raw config saved' });
   };
