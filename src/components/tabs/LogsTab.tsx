@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '@/data/mockApi';
+import { getEvents, getRawConfig } from '@/lib/supabaseApi';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -13,7 +13,7 @@ import { CalendarIcon, FileText } from 'lucide-react';
 import { format } from 'date-fns';
 import type { EventType } from '@/data/types';
 
-const eventColors: Record<EventType, string> = {
+const eventColors: Record<string, string> = {
   player_join: 'bg-neon-green/20 text-neon-green border-neon-green/50',
   player_leave: 'bg-muted text-muted-foreground border-border',
   kill: 'bg-neon-purple/20 text-neon-purple border-neon-purple/50',
@@ -25,6 +25,7 @@ const eventColors: Record<EventType, string> = {
   stop: 'bg-neon-red/20 text-neon-red border-neon-red/50',
   crash: 'bg-neon-red/20 text-neon-red border-neon-red/50',
   restart: 'bg-neon-yellow/20 text-neon-yellow border-neon-yellow/50',
+  command: 'bg-primary/20 text-primary border-primary/50',
 };
 
 const PAGE_SIZE = 20;
@@ -39,24 +40,24 @@ export default function LogsTab({ serverId }: { serverId: number }) {
 
   const { data: events = [], isLoading } = useQuery({
     queryKey: ['events', serverId, filterType, search],
-    queryFn: () => api.getEvents(serverId, { type: filterType || undefined, search: search || undefined }),
+    queryFn: () => getEvents(serverId, { type: filterType || undefined, search: search || undefined }),
   });
 
   const { data: rawLog = '' } = useQuery({
     queryKey: ['raw-log', serverId],
-    queryFn: () => api.getRawConfig(serverId, 'log'),
+    queryFn: () => getRawConfig(serverId, 'log'),
     enabled: rawMode,
   });
 
   const filteredEvents = useMemo(() => {
     let filtered = events.slice().reverse();
     if (dateFrom) {
-      const fromTs = Math.floor(dateFrom.getTime() / 1000);
-      filtered = filtered.filter(e => e.occurredAt >= fromTs);
+      filtered = filtered.filter(e => new Date(e.occurred_at) >= dateFrom);
     }
     if (dateTo) {
-      const toTs = Math.floor(dateTo.getTime() / 1000) + 86400;
-      filtered = filtered.filter(e => e.occurredAt <= toTs);
+      const to = new Date(dateTo);
+      to.setDate(to.getDate() + 1);
+      filtered = filtered.filter(e => new Date(e.occurred_at) <= to);
     }
     return filtered;
   }, [events, dateFrom, dateTo]);
@@ -69,11 +70,8 @@ export default function LogsTab({ serverId }: { serverId: number }) {
 
   return (
     <div className="space-y-3">
-      {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
         <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search events..." className="w-60 h-8 text-sm" />
-
-        {/* Date range */}
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="h-8 text-xs">
@@ -101,7 +99,6 @@ export default function LogsTab({ serverId }: { serverId: number }) {
             Clear dates
           </Button>
         )}
-
         <div className="ml-auto">
           <Button variant={rawMode ? 'default' : 'outline'} size="sm" className="h-8 text-xs" onClick={() => setRawMode(!rawMode)}>
             <FileText className="h-3 w-3 mr-1" /> {rawMode ? 'Structured' : 'Raw File'}
@@ -109,16 +106,9 @@ export default function LogsTab({ serverId }: { serverId: number }) {
         </div>
       </div>
 
-      {/* Type filters */}
       {!rawMode && (
         <div className="flex flex-wrap gap-1.5">
-          <Badge
-            variant={filterType === '' ? 'default' : 'outline'}
-            className="cursor-pointer text-xs"
-            onClick={() => setFilterType('')}
-          >
-            All
-          </Badge>
+          <Badge variant={filterType === '' ? 'default' : 'outline'} className="cursor-pointer text-xs" onClick={() => setFilterType('')}>All</Badge>
           {allTypes.map(t => (
             <Badge
               key={t}
@@ -153,19 +143,21 @@ export default function LogsTab({ serverId }: { serverId: number }) {
                 {visibleEvents.map(event => (
                   <TableRow key={event.id} className="border-border">
                     <TableCell className="font-mono text-xs text-muted-foreground">
-                      {new Date(event.occurredAt * 1000).toLocaleString()}
+                      {new Date(event.occurred_at).toLocaleString()}
                     </TableCell>
                     <TableCell>
-                      <span className={cn('inline-flex rounded-full border px-2 py-0.5 text-xs', eventColors[event.eventType] || 'border-border')}>
-                        {event.eventType.replace('_', ' ')}
+                      <span className={cn('inline-flex rounded-full border px-2 py-0.5 text-xs', eventColors[event.event_type] || 'border-border')}>
+                        {event.event_type.replace('_', ' ')}
                       </span>
                     </TableCell>
                     <TableCell className="text-sm">
-                      {Object.entries(event.payload).map(([k, v]) => (
-                        <span key={k} className="mr-3">
-                          <span className="text-muted-foreground">{k}:</span> {v}
-                        </span>
-                      ))}
+                      {event.payload && typeof event.payload === 'object' && !Array.isArray(event.payload) &&
+                        Object.entries(event.payload as Record<string, string>).map(([k, v]) => (
+                          <span key={k} className="mr-3">
+                            <span className="text-muted-foreground">{k}:</span> {v}
+                          </span>
+                        ))
+                      }
                     </TableCell>
                   </TableRow>
                 ))}

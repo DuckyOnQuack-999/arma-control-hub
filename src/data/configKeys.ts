@@ -1,0 +1,28 @@
+import type { ConfigKeyMeta } from './types';
+
+export const configKeys: ConfigKeyMeta[] = [
+  { key: 'CYCLE_SPEED', defaultValue: '30', description: 'Base cycle speed', type: 'float', min: 5, max: 200, section: 'physics' },
+  { key: 'CYCLE_RUBBER', defaultValue: '5', description: 'Rubber (lag compensation)', type: 'float', min: 0, max: 100, section: 'physics' },
+  { key: 'CYCLE_ACCEL', defaultValue: '10', description: 'Cycle acceleration', type: 'float', min: 0, max: 100, section: 'physics' },
+  { key: 'CYCLE_BRAKE', defaultValue: '-30', description: 'Cycle braking deceleration', type: 'float', min: -200, max: 0, section: 'physics' },
+  { key: 'ARENA_SIZE', defaultValue: '500', description: 'Arena size (diameter)', type: 'float', min: 50, max: 5000, section: 'gameplay' },
+  { key: 'WALLS_LENGTH', defaultValue: '-1', description: 'Max wall length (-1 = unlimited)', type: 'float', min: -1, max: 5000, section: 'gameplay' },
+  { key: 'WALLS_STAY_UP_DELAY', defaultValue: '2', description: 'Seconds walls persist after death', type: 'float', min: 0, max: 30, section: 'gameplay' },
+  { key: 'ROUND_TIME', defaultValue: '180', description: 'Round time in seconds', type: 'int', min: 30, max: 3600, section: 'gameplay' },
+  { key: 'LIMIT_ROUNDS', defaultValue: '10', description: 'Number of rounds per match', type: 'int', min: 1, max: 100, section: 'scoring' },
+  { key: 'LIMIT_SCORE', defaultValue: '100', description: 'Score limit to win', type: 'int', min: 1, max: 10000, section: 'scoring' },
+  { key: 'SCORE_KILL', defaultValue: '3', description: 'Points awarded per kill', type: 'int', min: 0, max: 100, section: 'scoring' },
+  { key: 'SCORE_WIN', defaultValue: '5', description: 'Points awarded for round win', type: 'int', min: 0, max: 100, section: 'scoring' },
+  { key: 'SCORE_SURVIVE', defaultValue: '1', description: 'Points per survival tick', type: 'int', min: 0, max: 100, section: 'scoring' },
+  { key: 'MAX_CLIENTS', defaultValue: '16', description: 'Maximum connected clients', type: 'int', min: 2, max: 64, section: 'network' },
+  { key: 'MIN_PLAYERS', defaultValue: '2', description: 'Minimum players to start', type: 'int', min: 1, max: 32, section: 'network' },
+  { key: 'DEDICATED_FPS', defaultValue: '40', description: 'Server simulation FPS', type: 'int', min: 10, max: 120, section: 'network' },
+  { key: 'SERVER_NAME', defaultValue: 'Unnamed Server', description: 'Server display name', type: 'string', section: 'admin' },
+  { key: 'TALK_TO_MASTER', defaultValue: '1', description: 'Register on master server', type: 'bool', section: 'admin' },
+  { key: 'ADMIN_PASS', defaultValue: '', description: 'Admin password (hashed)', type: 'string', section: 'admin' },
+  { key: 'SPAM_PROTECTION', defaultValue: '1', description: 'Enable spam protection', type: 'bool', section: 'admin' },
+  { key: 'TEAM_MAX_PLAYERS', defaultValue: '8', description: 'Max players per team', type: 'int', min: 1, max: 32, section: 'gameplay' },
+  { key: 'TEAM_MIN_PLAYERS', defaultValue: '1', description: 'Min players per team', type: 'int', min: 1, max: 32, section: 'gameplay' },
+  { key: 'NUM_AIS', defaultValue: '0', description: 'Number of AI players', type: 'int', min: 0, max: 16, section: 'misc' },
+  { key: 'WIN_ZONE_DEATHS', defaultValue: '0', description: 'Deaths in win zone to trigger', type: 'int', min: 0, max: 10, section: 'misc' },
+];

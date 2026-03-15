@@ -9,36 +9,42 @@ import { Terminal } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 const LoginPage = () => {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { login, register } = useAuthStore();
+  const { login, register, isAuthenticated } = useAuthStore();
   const navigate = useNavigate();
+
+  // Redirect if already authenticated
+  if (isAuthenticated) {
+    navigate('/dashboard', { replace: true });
+    return null;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim()) return;
+    if (!email.trim()) return;
     if (isRegister && password !== confirmPassword) {
       toast({ title: 'Passwords do not match', variant: 'destructive' });
       return;
     }
-    if (isRegister && password.length < 8) {
-      toast({ title: 'Password must be at least 8 characters', variant: 'destructive' });
+    if (password.length < 6) {
+      toast({ title: 'Password must be at least 6 characters', variant: 'destructive' });
       return;
     }
     setLoading(true);
     try {
       if (isRegister) {
-        await register(username, password);
-        toast({ title: 'Account created', description: `Welcome, ${username}` });
+        await register(email, password);
+        toast({ title: 'Account created', description: 'Check your email to confirm, or log in if auto-confirm is enabled.' });
       } else {
-        await login(username, password);
+        await login(email, password);
       }
       navigate('/dashboard');
-    } catch {
-      toast({ title: isRegister ? 'Registration failed' : 'Login failed', description: 'Invalid credentials', variant: 'destructive' });
+    } catch (err: any) {
+      toast({ title: isRegister ? 'Registration failed' : 'Login failed', description: err?.message || 'Invalid credentials', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -60,7 +66,6 @@ const LoginPage = () => {
           </p>
         </CardHeader>
         <CardContent>
-          {/* Mode toggle */}
           <div className="flex rounded-md border border-border mb-4 overflow-hidden">
             <button
               type="button"
@@ -80,11 +85,12 @@ const LoginPage = () => {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <Label className="font-body">Username</Label>
+              <Label className="font-body">Email</Label>
               <Input
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-                placeholder="admin"
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="admin@example.com"
                 autoFocus
                 className="border-border bg-muted font-mono"
               />
@@ -115,7 +121,7 @@ const LoginPage = () => {
               {loading ? (isRegister ? 'CREATING...' : 'AUTHENTICATING...') : (isRegister ? 'CREATE ACCOUNT' : 'ACCESS GRID')}
             </Button>
             <p className="text-center text-xs text-muted-foreground">
-              {isRegister ? 'First user becomes admin' : 'Demo: enter any username to login'}
+              {isRegister ? 'First user becomes admin automatically' : 'Sign in with your email and password'}
             </p>
           </form>
         </CardContent>

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '@/data/mockApi';
+import { getMetrics } from '@/lib/supabaseApi';
+import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
@@ -17,14 +18,24 @@ const ranges = [
 export default function MetricsTab({ serverId }: { serverId: number }) {
   const [range, setRange] = useState(24);
 
-  const { data: metrics = [], isLoading } = useQuery({
+  const { data: metrics = [], isLoading, refetch } = useQuery({
     queryKey: ['metrics', serverId, range],
-    queryFn: () => api.getMetrics(serverId, range),
+    queryFn: () => getMetrics(serverId, range),
   });
+
+  // Real-time subscription for new metrics
+  useEffect(() => {
+    const channel = supabase
+      .channel(`metrics-${serverId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'metrics', filter: `server_id=eq.${serverId}` }, () => {
+        refetch();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [serverId, refetch]);
 
   if (isLoading) return <LoadingSpinner />;
 
-  // Downsample for chart performance
   const step = Math.max(1, Math.floor(metrics.length / 200));
   const chartData = metrics.filter((_, i) => i % step === 0).map(m => ({
     ...m,
@@ -35,7 +46,6 @@ export default function MetricsTab({ serverId }: { serverId: number }) {
 
   return (
     <div className="space-y-4">
-      {/* Range selector */}
       <div className="flex items-center gap-2">
         {ranges.map(r => (
           <Button key={r.label} size="sm" variant={range === r.hours ? 'default' : 'outline'} onClick={() => setRange(r.hours)}
@@ -45,7 +55,6 @@ export default function MetricsTab({ serverId }: { serverId: number }) {
         ))}
       </div>
 
-      {/* Live stats */}
       {latest && (
         <div className="grid grid-cols-3 gap-3">
           <Card className="border-border bg-card">
@@ -80,7 +89,6 @@ export default function MetricsTab({ serverId }: { serverId: number }) {
 
       {chartData.length > 0 ? (
         <div className="space-y-6">
-          {/* CPU Chart */}
           <Card className="border-border bg-card p-4">
             <h3 className="font-display text-sm mb-3">CPU Usage (%)</h3>
             <ResponsiveContainer width="100%" height={200}>
@@ -94,7 +102,6 @@ export default function MetricsTab({ serverId }: { serverId: number }) {
             </ResponsiveContainer>
           </Card>
 
-          {/* Memory Chart */}
           <Card className="border-border bg-card p-4">
             <h3 className="font-display text-sm mb-3">Memory (MB)</h3>
             <ResponsiveContainer width="100%" height={200}>
@@ -108,7 +115,6 @@ export default function MetricsTab({ serverId }: { serverId: number }) {
             </ResponsiveContainer>
           </Card>
 
-          {/* Player Count Chart */}
           <Card className="border-border bg-card p-4">
             <h3 className="font-display text-sm mb-3">Player Count</h3>
             <ResponsiveContainer width="100%" height={200}>

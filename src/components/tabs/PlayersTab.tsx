@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/data/mockApi';
+import { getPlayers, getBans, kickPlayer, banPlayer, unban } from '@/lib/supabaseApi';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,18 +21,18 @@ export default function PlayersTab({ serverId }: { serverId: number }) {
 
   const { data: players = [], isLoading } = useQuery({
     queryKey: ['players', serverId],
-    queryFn: () => api.getPlayers(serverId),
+    queryFn: () => getPlayers(serverId),
     refetchInterval: 5000,
   });
 
   const { data: bans = [] } = useQuery({
     queryKey: ['bans', serverId],
-    queryFn: () => api.getBans(serverId),
+    queryFn: () => getBans(serverId),
   });
 
   const handleKick = async () => {
     if (!kickTarget) return;
-    await api.kickPlayer(serverId, kickTarget, kickReason);
+    await kickPlayer(serverId, kickTarget);
     queryClient.invalidateQueries({ queryKey: ['players', serverId] });
     toast({ title: 'Player kicked', description: `${kickTarget} has been kicked` });
     setKickTarget(null); setKickReason('');
@@ -40,7 +40,7 @@ export default function PlayersTab({ serverId }: { serverId: number }) {
 
   const handleBan = async () => {
     if (!banTarget) return;
-    await api.banPlayer(serverId, banTarget, banReason, banDuration);
+    await banPlayer(serverId, banTarget, banReason, banDuration);
     queryClient.invalidateQueries({ queryKey: ['players', serverId] });
     queryClient.invalidateQueries({ queryKey: ['bans', serverId] });
     toast({ title: 'Player banned', description: `${banTarget} has been banned` });
@@ -48,7 +48,7 @@ export default function PlayersTab({ serverId }: { serverId: number }) {
   };
 
   const handleUnban = async (banId: number) => {
-    await api.unban(banId);
+    await unban(banId);
     queryClient.invalidateQueries({ queryKey: ['bans', serverId] });
     toast({ title: 'Player unbanned' });
   };
@@ -57,8 +57,8 @@ export default function PlayersTab({ serverId }: { serverId: number }) {
     toast({ title: 'Player silenced', description: `${name} has been silenced` });
   };
 
-  const formatTime = (ts: number) => {
-    const diff = Math.floor(Date.now() / 1000) - ts;
+  const formatTime = (ts: string) => {
+    const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
     if (diff < 60) return `${diff}s ago`;
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     return `${Math.floor(diff / 3600)}h ago`;
@@ -88,16 +88,16 @@ export default function PlayersTab({ serverId }: { serverId: number }) {
             </TableHeader>
             <TableBody>
               {players.map(p => (
-                <TableRow key={p.name} className="border-border">
+                <TableRow key={p.id} className="border-border">
                   <TableCell className="font-semibold">{p.name}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{p.ip}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{p.ip_address}</TableCell>
                   <TableCell className="text-right font-mono">{p.score}</TableCell>
                   <TableCell className="text-right">
                     <span className={p.ping < 50 ? 'text-neon-green' : p.ping < 100 ? 'text-neon-yellow' : 'text-neon-red'}>
                       {p.ping}ms
                     </span>
                   </TableCell>
-                  <TableCell className="text-muted-foreground text-xs">{formatTime(p.joinTime)}</TableCell>
+                  <TableCell className="text-muted-foreground text-xs">{formatTime(p.joined_at)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
                       <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setKickTarget(p.name)}>
@@ -137,11 +137,11 @@ export default function PlayersTab({ serverId }: { serverId: number }) {
             <TableBody>
               {bans.map(b => (
                 <TableRow key={b.id} className="border-border">
-                  <TableCell className="font-semibold">{b.playerName}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{b.ipAddress}</TableCell>
+                  <TableCell className="font-semibold">{b.player_name}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{b.ip_address}</TableCell>
                   <TableCell className="text-sm">{b.reason}</TableCell>
-                  <TableCell className="text-muted-foreground">{b.bannedBy}</TableCell>
-                  <TableCell className="text-xs">{b.expiresAt ? new Date(b.expiresAt * 1000).toLocaleDateString() : 'Permanent'}</TableCell>
+                  <TableCell className="text-muted-foreground">{b.banned_by}</TableCell>
+                  <TableCell className="text-xs">{b.expires_at ? new Date(b.expires_at).toLocaleDateString() : 'Permanent'}</TableCell>
                   <TableCell className="text-right">
                     <Button size="sm" variant="ghost" className="text-xs text-neon-green" onClick={() => handleUnban(b.id)}>Unban</Button>
                   </TableCell>
@@ -155,7 +155,6 @@ export default function PlayersTab({ serverId }: { serverId: number }) {
         </div>
       </TabsContent>
 
-      {/* Kick Dialog */}
       <Dialog open={!!kickTarget} onOpenChange={() => setKickTarget(null)}>
         <DialogContent className="border-border bg-card">
           <DialogHeader><DialogTitle className="font-display">Kick {kickTarget}</DialogTitle></DialogHeader>
@@ -170,7 +169,6 @@ export default function PlayersTab({ serverId }: { serverId: number }) {
         </DialogContent>
       </Dialog>
 
-      {/* Ban Dialog */}
       <Dialog open={!!banTarget} onOpenChange={() => setBanTarget(null)}>
         <DialogContent className="border-border bg-card">
           <DialogHeader><DialogTitle className="font-display">Ban {banTarget}</DialogTitle></DialogHeader>

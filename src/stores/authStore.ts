@@ -1,45 +1,72 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { api } from '@/data/mockApi';
-import type { User } from '@/data/types';
+import { supabase } from '@/integrations/supabase/client';
+import type { AuthUser, UserRole } from '@/data/types';
 
 interface AuthStore {
-  user: User | null;
-  accessToken: string | null;
-  refreshToken: string | null;
+  user: AuthUser | null;
   isAuthenticated: boolean;
-  login: (username: string, password: string) => Promise<void>;
-  register: (username: string, password: string) => Promise<void>;
-  logout: () => void;
-  setTokens: (access: string, refresh: string) => void;
+  isLoading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  initialize: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthStore>()(
-  persist(
-    (set) => ({
-      user: null,
-      accessToken: null,
-      refreshToken: null,
-      isAuthenticated: false,
+export const useAuthStore = create<AuthStore>()((set, get) => ({
+  user: null,
+  isAuthenticated: false,
+  isLoading: true,
 
-      login: async (username, password) => {
-        const { user, accessToken, refreshToken } = await api.login(username, password);
-        set({ user, accessToken, refreshToken, isAuthenticated: true });
-      },
+  initialize: async () => {
+    // Listen for auth state changes
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        const { data: role } = await supabase.rpc('get_user_role', { _user_id: session.user.id });
+        set({
+          user: {
+            id: session.user.id,
+            email: session.user.email || '',
+            role: (role as UserRole) || 'viewer',
+          },
+          isAuthenticated: true,
+          isLoading: false,
+        });
+      } else {
+        set({ user: null, isAuthenticated: false, isLoading: false });
+      }
+    });
 
-      register: async (username, password) => {
-        const { user, accessToken, refreshToken } = await api.register(username, password);
-        set({ user, accessToken, refreshToken, isAuthenticated: true });
-      },
+    // Check existing session
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      const { data: role } = await supabase.rpc('get_user_role', { _user_id: session.user.id });
+      set({
+        user: {
+          id: session.user.id,
+          email: session.user.email || '',
+          role: (role as UserRole) || 'viewer',
+        },
+        isAuthenticated: true,
+        isLoading: false,
+      });
+    } else {
+      set({ isLoading: false });
+    }
+  },
 
-      logout: () => {
-        set({ user: null, accessToken: null, refreshToken: null, isAuthenticated: false });
-      },
+  login: async (email, password) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    // Auth state change listener handles the rest
+  },
 
-      setTokens: (access, refresh) => {
-        set({ accessToken: access, refreshToken: refresh });
-      },
-    }),
-    { name: 'retrocycles-auth' }
-  )
-);
+  register: async (email, password) => {
+    const { error } = await supabase.auth.signUp({ email, password });
+    if (error) throw error;
+  },
+
+  logout: async () => {
+    await supabase.auth.signOut();
+    set({ user: null, isAuthenticated: false });
+  },
+}));

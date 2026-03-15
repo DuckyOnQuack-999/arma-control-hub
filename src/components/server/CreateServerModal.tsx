@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { api } from '@/data/mockApi';
+import { createServer } from '@/lib/supabaseApi';
 import { toast } from '@/hooks/use-toast';
 
 interface Props {
@@ -16,12 +16,12 @@ interface Props {
 export function CreateServerModal({ open, onClose, onCreated }: Props) {
   const [form, setForm] = useState({
     name: '',
-    executablePath: '/usr/bin/armagetronad-dedicated',
-    dataDir: '/usr/share/armagetronad',
-    configDir: '/etc/armagetronad/new',
+    executable_path: '/usr/bin/armagetronad-dedicated',
+    data_dir: '/usr/share/armagetronad',
+    config_dir: '/etc/armagetronad/new',
     port: 4537,
-    maxPlayers: 16,
-    autoRestart: true,
+    max_players: 16,
+    auto_restart: true,
   });
   const [loading, setLoading] = useState(false);
 
@@ -32,11 +32,13 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
     }
     setLoading(true);
     try {
-      await api.createServer(form);
+      await createServer(form);
       toast({ title: 'Server created', description: `${form.name} has been added` });
       onCreated();
       onClose();
-      setForm({ name: '', executablePath: '/usr/bin/armagetronad-dedicated', dataDir: '/usr/share/armagetronad', configDir: '/etc/armagetronad/new', port: 4537, maxPlayers: 16, autoRestart: true });
+      setForm({ name: '', executable_path: '/usr/bin/armagetronad-dedicated', data_dir: '/usr/share/armagetronad', config_dir: '/etc/armagetronad/new', port: 4537, max_players: 16, auto_restart: true });
+    } catch (err: any) {
+      toast({ title: 'Failed to create server', description: err?.message, variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -55,16 +57,16 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
           </div>
           <div className="grid gap-1.5">
             <Label>Executable Path</Label>
-            <Input value={form.executablePath} onChange={e => setForm(f => ({ ...f, executablePath: e.target.value }))} className="font-mono text-xs" />
+            <Input value={form.executable_path} onChange={e => setForm(f => ({ ...f, executable_path: e.target.value }))} className="font-mono text-xs" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
               <Label>Data Directory</Label>
-              <Input value={form.dataDir} onChange={e => setForm(f => ({ ...f, dataDir: e.target.value }))} className="font-mono text-xs" />
+              <Input value={form.data_dir} onChange={e => setForm(f => ({ ...f, data_dir: e.target.value }))} className="font-mono text-xs" />
             </div>
             <div className="grid gap-1.5">
               <Label>Config Directory</Label>
-              <Input value={form.configDir} onChange={e => setForm(f => ({ ...f, configDir: e.target.value }))} className="font-mono text-xs" />
+              <Input value={form.config_dir} onChange={e => setForm(f => ({ ...f, config_dir: e.target.value }))} className="font-mono text-xs" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -74,11 +76,11 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
             </div>
             <div className="grid gap-1.5">
               <Label>Max Players</Label>
-              <Input type="number" value={form.maxPlayers} onChange={e => setForm(f => ({ ...f, maxPlayers: +e.target.value }))} min={2} max={32} />
+              <Input type="number" value={form.max_players} onChange={e => setForm(f => ({ ...f, max_players: +e.target.value }))} min={2} max={32} />
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Switch checked={form.autoRestart} onCheckedChange={v => setForm(f => ({ ...f, autoRestart: v }))} />
+            <Switch checked={form.auto_restart} onCheckedChange={v => setForm(f => ({ ...f, auto_restart: v }))} />
             <Label>Auto-restart on crash</Label>
           </div>
         </div>

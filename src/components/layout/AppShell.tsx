@@ -21,19 +21,17 @@ export function AppShell() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 
   return (
     <div className="flex min-h-screen w-full bg-background cyber-grid">
-      {/* Mobile overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* Sidebar */}
       <aside className={`fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-border bg-card transition-transform lg:static lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex h-14 items-center justify-between border-b border-border px-4">
           <button onClick={() => navigate('/dashboard')} className="flex items-center gap-2">
@@ -65,10 +63,10 @@ export function AppShell() {
             <DropdownMenuTrigger asChild>
               <button className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-body hover:bg-muted">
                 <div className="flex h-7 w-7 items-center justify-center rounded-full border border-primary/50 bg-primary/10 text-xs font-bold text-primary">
-                  {user?.username?.[0]?.toUpperCase() || 'U'}
+                  {user?.email?.[0]?.toUpperCase() || 'U'}
                 </div>
                 <div className="flex-1 text-left">
-                  <div className="text-sm font-medium text-foreground">{user?.username}</div>
+                  <div className="text-sm font-medium text-foreground truncate max-w-32">{user?.email}</div>
                   <div className="text-xs text-muted-foreground">{user?.role}</div>
                 </div>
                 <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
@@ -83,19 +81,14 @@ export function AppShell() {
         </div>
       </aside>
 
-      {/* Main */}
       <div className="flex flex-1 flex-col">
         <header className="flex h-14 items-center gap-3 border-b border-border px-4 lg:px-6">
           <Button size="icon" variant="ghost" className="lg:hidden h-8 w-8" onClick={() => setSidebarOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
           <div className="flex-1" />
-          {/* Notification bell */}
           <Button size="icon" variant="ghost" className="relative h-8 w-8">
             <Bell className="h-4 w-4" />
-            <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">
-              3
-            </span>
           </Button>
         </header>
         <main className="flex-1 overflow-auto p-4 lg:p-6 animate-in fade-in duration-200">
