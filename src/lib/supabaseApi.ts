@@ -1,6 +1,6 @@
 // Real Supabase API layer — replaces mockApi.ts
 import { supabase } from '@/integrations/supabase/client';
-import type { Server, Ban, Player, ServerEvent, MetricRow, MapFile, MetricPoint, BrowserServer } from '@/data/types';
+import type { Server, Ban, Player, ServerEvent, MapFile, MetricPoint, BrowserServer } from '@/data/types';
 
 // ─── Servers ─────────────────────────────────────────────
 
