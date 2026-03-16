@@ -5,7 +5,7 @@ import { Progress } from '@/components/ui/progress';
 import { Play, Square, RotateCcw, Users, Cpu, HardDrive } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Server, ServerStatus } from '@/data/types';
-import { updateServer } from '@/lib/supabaseApi';
+import { serverAction } from '@/lib/supabaseApi';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/hooks/use-toast';
 
@@ -15,11 +15,10 @@ export function ServerCard({ server }: { server: Server }) {
 
   const handleAction = async (e: React.MouseEvent, action: 'start' | 'stop' | 'restart') => {
     e.stopPropagation();
-    const statusMap: Record<string, string> = { start: 'online', stop: 'offline', restart: 'online' };
     try {
-      await updateServer(server.id, { status: statusMap[action] });
+      const result = await serverAction(server.id, action);
       queryClient.invalidateQueries({ queryKey: ['servers'] });
-      toast({ title: `Server ${action}ed`, description: `${server.name} action completed` });
+      toast({ title: `Server ${action}`, description: result.message });
     } catch (err: any) {
       toast({ title: 'Action failed', description: err?.message, variant: 'destructive' });
     }

@@ -1,17 +1,18 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getUserRoles, changeUserRole, deleteUserRole } from '@/lib/supabaseApi';
+import { getUserRoles, changeUserRole, deleteUserRole, getProfiles, getAuditLog, changePassword, updateProfile } from '@/lib/supabaseApi';
 import { useAuthStore } from '@/stores/authStore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Key, Shield, Clock } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import type { UserRole } from '@/data/types';
 
@@ -20,12 +21,32 @@ const SettingsPage = () => {
   const queryClient = useQueryClient();
   const [deleteUserId, setDeleteUserId] = useState<string | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
+
+  const isAdmin = user?.role === 'admin';
 
   const { data: userRoles = [], isLoading } = useQuery({
     queryKey: ['user-roles'],
     queryFn: getUserRoles,
-    enabled: user?.role === 'admin',
+    enabled: isAdmin,
   });
+
+  const { data: profiles = [] } = useQuery({
+    queryKey: ['profiles'],
+    queryFn: getProfiles,
+    enabled: isAdmin,
+  });
+
+  const { data: auditLog = [] } = useQuery({
+    queryKey: ['audit-log'],
+    queryFn: () => getAuditLog(25),
+    enabled: isAdmin,
+  });
+
+  // Build a map of user_id -> email from profiles
+  const emailMap = new Map(profiles.map(p => [p.id, p.email || p.id]));
 
   const changeRoleMutation = useMutation({
     mutationFn: ({ userId, role }: { userId: string; role: UserRole }) => changeUserRole(userId, role),
@@ -45,22 +66,78 @@ const SettingsPage = () => {
     },
   });
 
-  if (isLoading && user?.role === 'admin') return <LoadingSpinner />;
+  const handlePasswordChange = async () => {
+    if (!newPassword || newPassword.length < 6) {
+      toast({ title: 'Password too short', description: 'Minimum 6 characters', variant: 'destructive' });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast({ title: 'Passwords do not match', variant: 'destructive' });
+      return;
+    }
+    try {
+      await changePassword(newPassword);
+      toast({ title: 'Password changed successfully' });
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      toast({ title: 'Failed', description: err?.message, variant: 'destructive' });
+    }
+  };
+
+  const handleDisplayNameUpdate = async () => {
+    if (!displayName.trim() || !user) return;
+    try {
+      await updateProfile(user.id, { display_name: displayName.trim() });
+      toast({ title: 'Display name updated' });
+    } catch (err: any) {
+      toast({ title: 'Failed', description: err?.message, variant: 'destructive' });
+    }
+  };
+
+  if (isLoading && isAdmin) return <LoadingSpinner />;
 
   return (
     <div className="space-y-6 max-w-3xl">
       <h1 className="font-display text-2xl font-bold tracking-wide">Settings</h1>
 
+      {/* Account */}
       <Card className="border-border bg-card">
         <CardHeader>
-          <CardTitle className="font-display text-sm">Your Account</CardTitle>
+          <CardTitle className="font-display text-sm flex items-center gap-2"><Shield className="h-4 w-4" /> Your Account</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2 text-sm">
+        <CardContent className="space-y-3 text-sm">
           <div className="flex justify-between"><span className="text-muted-foreground">Email</span><span>{user?.email}</span></div>
           <div className="flex justify-between"><span className="text-muted-foreground">Role</span><Badge variant="outline" className="text-xs">{user?.role}</Badge></div>
+          <div className="pt-2 space-y-2">
+            <Label className="text-xs text-muted-foreground">Display Name</Label>
+            <div className="flex gap-2">
+              <Input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Enter display name" className="h-8 text-sm" />
+              <Button size="sm" className="h-8" onClick={handleDisplayNameUpdate} disabled={!displayName.trim()}>Save</Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
+      {/* Password Change */}
+      <Card className="border-border bg-card">
+        <CardHeader>
+          <CardTitle className="font-display text-sm flex items-center gap-2"><Key className="h-4 w-4" /> Change Password</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="space-y-2">
+            <Label className="text-xs">New Password</Label>
+            <Input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Min 6 characters" className="h-8 text-sm" />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs">Confirm Password</Label>
+            <Input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Repeat password" className="h-8 text-sm" />
+          </div>
+          <Button size="sm" onClick={handlePasswordChange} disabled={!newPassword || !confirmPassword}>Update Password</Button>
+        </CardContent>
+      </Card>
+
+      {/* Preferences */}
       <Card className="border-border bg-card">
         <CardHeader>
           <CardTitle className="font-display text-sm">App Preferences</CardTitle>
@@ -76,7 +153,8 @@ const SettingsPage = () => {
         </CardContent>
       </Card>
 
-      {user?.role === 'admin' && (
+      {/* User Management (admin only) */}
+      {isAdmin && (
         <Card className="border-border bg-card">
           <CardHeader>
             <CardTitle className="font-display text-sm">User Management</CardTitle>
@@ -85,7 +163,7 @@ const SettingsPage = () => {
             <Table>
               <TableHeader>
                 <TableRow className="border-border hover:bg-transparent">
-                  <TableHead>User ID</TableHead>
+                  <TableHead>User</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -93,7 +171,10 @@ const SettingsPage = () => {
               <TableBody>
                 {userRoles.map(u => (
                   <TableRow key={u.id} className="border-border">
-                    <TableCell className="font-mono text-xs max-w-40 truncate">{u.user_id}</TableCell>
+                    <TableCell className="text-xs">
+                      <div>{emailMap.get(u.user_id) || 'Unknown'}</div>
+                      <div className="font-mono text-[10px] text-muted-foreground truncate max-w-40">{u.user_id}</div>
+                    </TableCell>
                     <TableCell>
                       <Select
                         value={u.role}
@@ -125,11 +206,32 @@ const SettingsPage = () => {
         </Card>
       )}
 
+      {/* Audit Log (admin only) */}
+      {isAdmin && auditLog.length > 0 && (
+        <Card className="border-border bg-card">
+          <CardHeader>
+            <CardTitle className="font-display text-sm flex items-center gap-2"><Clock className="h-4 w-4" /> Audit Log</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {auditLog.map(entry => (
+                <div key={entry.id} className="flex items-start gap-3 text-xs border-b border-border pb-2 last:border-0">
+                  <span className="text-muted-foreground shrink-0 w-32">{new Date(entry.created_at).toLocaleString()}</span>
+                  <span className="font-mono text-primary">{entry.action}</span>
+                  <span className="text-muted-foreground truncate">{emailMap.get(entry.user_id) || entry.user_id?.slice(0, 8)}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <ConfirmDialog
         open={!!deleteUserId}
         onOpenChange={() => setDeleteUserId(null)}
         title="Remove User Role"
         description="Are you sure you want to remove this user's role? They will lose access."
+        destructive
         onConfirm={() => deleteUserId && deleteUserMutation.mutate(deleteUserId)}
       />
     </div>

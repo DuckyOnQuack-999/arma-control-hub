@@ -1,6 +1,6 @@
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { getServer, updateServer } from '@/lib/supabaseApi';
+import { getServer, serverAction } from '@/lib/supabaseApi';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ServerStatusBadge } from '@/components/server/ServerStatusBadge';
 import { ServerControlBar } from '@/components/server/ServerControlBar';
@@ -28,7 +28,6 @@ const ServerDetailPage = () => {
     queryFn: () => getServer(serverId),
   });
 
-  // Real-time updates for this server
   useEffect(() => {
     const channel = supabase
       .channel(`server-${serverId}`)
@@ -44,12 +43,9 @@ const ServerDetailPage = () => {
   const handleAction = async (action: 'start' | 'stop' | 'restart' | 'kill') => {
     setLoading(true);
     try {
-      const statusMap: Record<string, ServerStatus> = {
-        start: 'online', stop: 'offline', restart: 'online', kill: 'offline',
-      };
-      await updateServer(serverId, { status: statusMap[action] });
+      const result = await serverAction(serverId, action);
+      toast({ title: `Server ${action}`, description: result.message });
       refetch();
-      toast({ title: `Server ${action}ed`, description: `${server.name} action completed` });
     } catch (err: any) {
       toast({ title: 'Action failed', description: err?.message, variant: 'destructive' });
     } finally {
