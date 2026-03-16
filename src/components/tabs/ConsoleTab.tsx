@@ -8,6 +8,7 @@ import { Trash2, Download, Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ConsoleLine, ConsoleLineType } from '@/data/types';
 import { toast } from '@/hooks/use-toast';
+import { configKeys } from '@/data/configKeys';
 
 const lineColors: Record<ConsoleLineType, string> = {
   error: 'text-neon-red',
@@ -20,23 +21,26 @@ const lineColors: Record<ConsoleLineType, string> = {
   info: 'text-primary',
 };
 
+// Full Armagetron command list from server admin docs
 const ARMA_COMMANDS = [
-  'KICK', 'BAN', 'UNBAN_IP', 'SILENCE', 'VOICE',
+  // Player management
+  'PLAYERS', 'KICK', 'BAN', 'BAN_IP', 'UNBAN', 'UNBAN_IP',
+  'SILENCE', 'VOICE',
+  // Auth
+  'LOGIN', 'LOGOUT',
+  // Server control
+  'QUIT', 'EXIT', 'SHUTDOWN', 'RESTART',
+  // Chat / messaging
   'SAY', 'CENTER_MESSAGE', 'CONSOLE_MESSAGE',
-  'QUIT', 'EXIT', 'SHUTDOWN',
+  // Config loading
   'INCLUDE', 'RINCLUDE',
-  'CYCLE_SPEED', 'CYCLE_RUBBER', 'CYCLE_ACCEL', 'CYCLE_BRAKE',
-  'ARENA_SIZE', 'WALLS_LENGTH', 'WALLS_STAY_UP_DELAY',
-  'ROUND_TIME', 'LIMIT_ROUNDS', 'LIMIT_SCORE', 'LIMIT_TIME',
-  'MAX_CLIENTS', 'MIN_PLAYERS', 'NUM_AIS',
-  'TEAM_MAX_PLAYERS', 'TEAM_MIN_PLAYERS', 'TEAM_MAX_IMBALANCE',
-  'SERVER_NAME', 'TALK_TO_MASTER', 'DEDICATED_FPS',
-  'SCORE_KILL', 'SCORE_WIN', 'SCORE_SURVIVE', 'SCORE_HOLE',
-  'SPAM_PROTECTION', 'ADMIN_PASS',
-  'WIN_ZONE_DEATHS', 'WIN_ZONE_EXPAND', 'WIN_ZONE_RANDOMNESS',
+  // All config keys are also valid commands
+  ...configKeys.map(k => k.key),
 ];
 
-// Map event types from server_events to console line types
+// Deduplicate
+const UNIQUE_COMMANDS = [...new Set(ARMA_COMMANDS)].sort();
+
 function eventToLineType(eventType: string): ConsoleLineType {
   const map: Record<string, ConsoleLineType> = {
     player_join: 'join', player_leave: 'leave', kill: 'kill',
@@ -62,14 +66,11 @@ export default function ConsoleTab({ serverId }: { serverId: number }) {
   const suggestions = useMemo(() => {
     if (!command.trim()) return [];
     const upper = command.toUpperCase();
-    return ARMA_COMMANDS.filter(c => c.startsWith(upper)).slice(0, 8);
+    return UNIQUE_COMMANDS.filter(c => c.startsWith(upper)).slice(0, 8);
   }, [command]);
 
-  // Subscribe to real-time server events for this server
   useEffect(() => {
     clearLines();
-
-    // Load recent events as console history
     const loadHistory = async () => {
       const { data } = await supabase
         .from('server_events')
@@ -77,20 +78,18 @@ export default function ConsoleTab({ serverId }: { serverId: number }) {
         .eq('server_id', serverId)
         .order('occurred_at', { ascending: false })
         .limit(50);
-
       if (data) {
         const consolelines: ConsoleLine[] = data.reverse().map(e => ({
           id: lineIdCounter++,
           timestamp: new Date(e.occurred_at).getTime() / 1000,
           type: eventToLineType(e.event_type),
-          text: `[${e.event_type.toUpperCase()}] ${JSON.stringify(e.payload)}`,
+          text: `[${e.event_type.toUpperCase()}] ${typeof e.payload === 'object' ? JSON.stringify(e.payload) : e.payload}`,
         }));
         consolelines.forEach(l => addLine(l));
       }
     };
     loadHistory();
 
-    // Real-time subscription
     const channel = supabase
       .channel(`console-${serverId}`)
       .on('postgres_changes', {
@@ -102,7 +101,7 @@ export default function ConsoleTab({ serverId }: { serverId: number }) {
           id: lineIdCounter++,
           timestamp: new Date(e.occurred_at).getTime() / 1000,
           type: eventToLineType(e.event_type),
-          text: `[${e.event_type.toUpperCase()}] ${JSON.stringify(e.payload)}`,
+          text: `[${e.event_type.toUpperCase()}] ${typeof e.payload === 'object' ? JSON.stringify(e.payload) : e.payload}`,
         };
         addLine(line);
         setConnected(true);
@@ -136,7 +135,16 @@ export default function ConsoleTab({ serverId }: { serverId: number }) {
       text: `> ${command}`,
     };
     addLine(line);
-    await sendCommand(serverId, command);
+    try {
+      await sendCommand(serverId, command);
+    } catch (err: any) {
+      addLine({
+        id: lineIdCounter++,
+        timestamp: Date.now() / 1000,
+        type: 'error',
+        text: `Error: ${err?.message || 'Failed to send command'}`,
+      });
+    }
     setCommand('');
     setShowSuggestions(false);
   };
@@ -219,7 +227,7 @@ export default function ConsoleTab({ serverId }: { serverId: number }) {
 
       <div className="relative border-t border-border p-2">
         {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute bottom-full left-0 right-0 mx-2 mb-1 rounded-md border border-border bg-popover shadow-md overflow-hidden z-10">
+          <div className="absolute bottom-full left-0 right-0 mx-2 mb-1 rounded-md border border-border bg-popover shadow-md overflow-hidden z-10 max-h-48 overflow-y-auto">
             {suggestions.map(s => (
               <button
                 key={s}
