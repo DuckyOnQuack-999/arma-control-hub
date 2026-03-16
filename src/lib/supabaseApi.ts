@@ -40,6 +40,17 @@ export async function updateServer(id: number, updates: Partial<Server>): Promis
   if (error) throw error;
 }
 
+// ─── Server Control (via Edge Function) ────────────────────
+
+export async function serverAction(serverId: number, action: 'start' | 'stop' | 'restart' | 'kill', command?: string): Promise<{ success: boolean; message: string; newStatus?: string }> {
+  const { data, error } = await supabase.functions.invoke('server-control', {
+    body: { serverId, action, command },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
 // ─── Players ─────────────────────────────────────────────
 
 export async function getPlayers(serverId: number): Promise<Player[]> {
@@ -54,6 +65,8 @@ export async function kickPlayer(serverId: number, playerName: string): Promise<
     .update({ is_online: false })
     .eq('server_id', serverId).eq('name', playerName);
   if (error) throw error;
+  // Also send kick command via edge function
+  await serverAction(serverId, 'command', `KICK ${playerName}`);
 }
 
 // ─── Bans ─────────────────────────────────────────────
@@ -78,8 +91,9 @@ export async function banPlayer(serverId: number, playerName: string, reason: st
   });
   if (error) throw error;
 
-  // Also mark player offline
-  await kickPlayer(serverId, playerName);
+  // Also mark player offline and send ban command
+  await supabase.from('players').update({ is_online: false }).eq('server_id', serverId).eq('name', playerName);
+  await serverAction(serverId, 'command', `BAN ${playerName}`);
 }
 
 export async function unban(banId: number): Promise<void> {
@@ -94,7 +108,6 @@ export async function getEvents(serverId: number, filters?: { type?: string; sea
     .eq('server_id', serverId).order('occurred_at', { ascending: true });
 
   if (filters?.type) query = query.eq('event_type', filters.type);
-  // search is done client-side on payload
 
   const { data, error } = await query;
   if (error) throw error;
@@ -136,7 +149,6 @@ export async function getConfig(serverId: number, filename = 'settings_custom.cf
 }
 
 export async function saveConfig(serverId: number, config: Record<string, string>, filename = 'settings_custom.cfg'): Promise<void> {
-  // Upsert all keys
   const rows = Object.entries(config).map(([key, value]) => ({
     server_id: serverId,
     filename,
@@ -178,7 +190,6 @@ export async function getMaps(serverId: number): Promise<MapFile[]> {
 }
 
 export async function deleteMap(serverId: number, filename: string): Promise<void> {
-  // Delete from storage if exists
   const { data: mapFile } = await supabase.from('map_files').select('storage_path')
     .eq('server_id', serverId).eq('filename', filename).maybeSingle();
   if (mapFile?.storage_path) {
@@ -218,7 +229,6 @@ export async function getUserRoles(): Promise<Array<{ id: string; user_id: strin
 }
 
 export async function changeUserRole(userId: string, role: 'admin' | 'moderator' | 'viewer'): Promise<void> {
-  // Upsert: update existing role row
   const { error } = await supabase.from('user_roles')
     .update({ role })
     .eq('user_id', userId);
@@ -230,23 +240,66 @@ export async function deleteUserRole(userId: string): Promise<void> {
   if (error) throw error;
 }
 
-// ─── Server Browser (static/mock for now — would come from master server) ─
+// ─── Profiles ─────────────────────────────────────────────
+
+export async function getProfiles(): Promise<Array<{ id: string; email: string; display_name: string | null }>> {
+  const { data, error } = await supabase.from('profiles').select('*');
+  if (error) throw error;
+  return (data ?? []) as any;
+}
+
+export async function getProfile(userId: string): Promise<{ id: string; email: string; display_name: string | null } | null> {
+  const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+  if (error) return null;
+  return data as any;
+}
+
+export async function updateProfile(userId: string, updates: { display_name?: string }): Promise<void> {
+  const { error } = await supabase.from('profiles').update(updates).eq('id', userId);
+  if (error) throw error;
+}
+
+// ─── Audit Log ─────────────────────────────────────────────
+
+export async function getAuditLog(limit = 50): Promise<Array<{ id: number; user_id: string; action: string; target_type: string; target_id: string; details: any; created_at: string }>> {
+  const { data, error } = await supabase.from('audit_log').select('*')
+    .order('created_at', { ascending: false }).limit(limit);
+  if (error) throw error;
+  return (data ?? []) as any;
+}
+
+// ─── Server Browser (via Edge Function) ─────────────────────
 
 export async function getBrowserServers(): Promise<BrowserServer[]> {
-  // This would normally query a master server list via edge function
-  // For now return empty — this data comes from UDP queries which can't run in browser
-  return [];
+  try {
+    const { data, error } = await supabase.functions.invoke('server-browser');
+    if (error) throw error;
+    return data?.servers ?? [];
+  } catch {
+    return [];
+  }
 }
 
 // ─── Console / Commands ─────────────────────────────────
-// Console commands are sent via edge functions to the actual game server agent
-// For now, log to server_events
 
 export async function sendCommand(serverId: number, command: string): Promise<string> {
-  await supabase.from('server_events').insert({
-    server_id: serverId,
-    event_type: 'command',
-    payload: { command, source: 'panel' },
-  });
-  return `> ${command}\nCommand queued for server ${serverId}`;
+  try {
+    const result = await serverAction(serverId, 'command', command);
+    return result.message || `> ${command}\nCommand sent`;
+  } catch {
+    // Fallback: insert directly to server_events
+    await supabase.from('server_events').insert({
+      server_id: serverId,
+      event_type: 'command',
+      payload: { command, source: 'panel' },
+    });
+    return `> ${command}\nCommand queued for server ${serverId}`;
+  }
+}
+
+// ─── Password Change ─────────────────────────────────────
+
+export async function changePassword(newPassword: string): Promise<void> {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
 }
