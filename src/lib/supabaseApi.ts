@@ -42,7 +42,7 @@ export async function updateServer(id: number, updates: Partial<Server>): Promis
 
 // ─── Server Control (via Edge Function) ────────────────────
 
-export async function serverAction(serverId: number, action: 'start' | 'stop' | 'restart' | 'kill', command?: string): Promise<{ success: boolean; message: string; newStatus?: string }> {
+export async function serverAction(serverId: number, action: 'start' | 'stop' | 'restart' | 'kill' | 'command', command?: string): Promise<{ success: boolean; message: string; newStatus?: string }> {
   const { data, error } = await supabase.functions.invoke('server-control', {
     body: { serverId, action, command },
   });
