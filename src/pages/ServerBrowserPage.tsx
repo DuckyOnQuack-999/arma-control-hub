@@ -119,8 +119,6 @@ const ServerBrowserPage = () => {
                       <Copy className="h-3.5 w-3.5" />
                     </Button>
                   )}
-                    <Copy className="h-3.5 w-3.5" />
-                  </Button>
                 </TableCell>
               </TableRow>
             ))}
