@@ -23,7 +23,8 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Verify user from JWT
-    const userClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!, {
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: { user }, error: authError } = await userClient.auth.getUser();
@@ -52,7 +53,7 @@ Deno.serve(async (req) => {
 
     // Verify server exists
     const { data: server, error: serverErr } = await supabase
-      .from('servers').select('id, name, status').eq('id', serverId).maybeSingle();
+      .from('servers').select('id, name, status, executable_path, config_dir, data_dir, port').eq('id', serverId).maybeSingle();
     if (serverErr || !server) {
       return new Response(JSON.stringify({ error: 'Server not found' }), {
         status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -70,12 +71,16 @@ Deno.serve(async (req) => {
             status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        newStatus = 'starting';
-        // Simulate startup: set to online after brief delay via DB
-        // In production, an agent on the game server host would pick this up
-        setTimeout(async () => {
-          await supabase.from('servers').update({ status: 'online', uptime: 0 }).eq('id', serverId);
-        }, 2000);
+        // Transition: offline/crashed → starting → online
+        await supabase.from('servers').update({ status: 'starting' }).eq('id', serverId);
+        // In production, an agent on the host machine would pick up the 'starting' status
+        // and launch the actual armagetronad-dedicated process. For now we simulate:
+        await supabase.from('servers').update({ status: 'online', uptime: 0 }).eq('id', serverId);
+        newStatus = 'online';
+        payload.executable = server.executable_path;
+        payload.config_dir = server.config_dir;
+        payload.data_dir = server.data_dir;
+        payload.port = server.port;
         break;
 
       case 'stop':
@@ -84,12 +89,11 @@ Deno.serve(async (req) => {
             status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        newStatus = 'stopping';
-        setTimeout(async () => {
-          await supabase.from('servers').update({ status: 'offline', player_count: 0, cpu_percent: 0, memory_mb: 0 }).eq('id', serverId);
-          // Mark all players offline
-          await supabase.from('players').update({ is_online: false }).eq('server_id', serverId);
-        }, 1500);
+        await supabase.from('servers').update({ status: 'stopping' }).eq('id', serverId);
+        // Graceful stop: mark players offline, then set offline
+        await supabase.from('players').update({ is_online: false }).eq('server_id', serverId);
+        await supabase.from('servers').update({ status: 'offline', player_count: 0, cpu_percent: 0, memory_mb: 0 }).eq('id', serverId);
+        newStatus = 'offline';
         break;
 
       case 'restart':
@@ -98,19 +102,17 @@ Deno.serve(async (req) => {
             status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        newStatus = 'stopping';
-        setTimeout(async () => {
-          await supabase.from('servers').update({ status: 'starting' }).eq('id', serverId);
-          await supabase.from('players').update({ is_online: false }).eq('server_id', serverId);
-          setTimeout(async () => {
-            await supabase.from('servers').update({ status: 'online', uptime: 0, player_count: 0 }).eq('id', serverId);
-          }, 2000);
-        }, 1500);
+        await supabase.from('servers').update({ status: 'stopping' }).eq('id', serverId);
+        await supabase.from('players').update({ is_online: false }).eq('server_id', serverId);
+        await supabase.from('servers').update({ status: 'starting' }).eq('id', serverId);
+        await supabase.from('servers').update({ status: 'online', uptime: 0, player_count: 0 }).eq('id', serverId);
+        newStatus = 'online';
         break;
 
       case 'kill':
-        newStatus = 'offline';
         await supabase.from('players').update({ is_online: false }).eq('server_id', serverId);
+        await supabase.from('servers').update({ status: 'offline', player_count: 0, cpu_percent: 0, memory_mb: 0 }).eq('id', serverId);
+        newStatus = 'offline';
         payload.forced = true;
         break;
 
@@ -120,19 +122,20 @@ Deno.serve(async (req) => {
             status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
+        if (server.status !== 'online') {
+          return new Response(JSON.stringify({ error: `Cannot send command: server is ${server.status}` }), {
+            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
         eventType = 'command';
         payload.command = command;
+        // In production, the agent would pipe this to the server's stdin
         break;
 
       default:
         return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
-    }
-
-    // Update server status if needed
-    if (newStatus) {
-      await supabase.from('servers').update({ status: newStatus }).eq('id', serverId);
     }
 
     // Log the event

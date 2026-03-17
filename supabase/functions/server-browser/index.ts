@@ -8,10 +8,8 @@ interface BrowserServer {
   name: string;
   host: string;
   port: number;
-  map: string;
   players: number;
   maxPlayers: number;
-  ping: number;
   gameType: string;
   version: string;
   playerNames: string[];
@@ -28,10 +26,16 @@ function stripHtmlTags(html: string): string {
 }
 
 function decodeHtmlEntities(text: string): string {
-  return text.replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)));
+  return text
+    .replace(/&gt;/g, '>')
+    .replace(/&lt;/g, '<')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)));
 }
 
 async function fetchServerList(): Promise<BrowserServer[]> {
+  // Fetch the legacy page — using ?info=_ to trigger the detail view which includes armagetronad:// links
   const url = 'https://browser.armanelgtron.tk/legacy/?info=_';
 
   const controller = new AbortController();
@@ -58,9 +62,8 @@ async function fetchServerList(): Promise<BrowserServer[]> {
 function parseServers(html: string): BrowserServer[] {
   const servers: BrowserServer[] = [];
 
-  // Split by server anchor tags: <a name="ServerName" href="...">
-  // Each server block starts with <a name= and contains name, player count, player list
-  // and optionally an armagetronad:// link
+  // The HTML is a single long line. Each server block starts with <a name="ServerName"
+  // Split by the anchor tag pattern
   const serverBlocks = html.split(/<a name="/);
 
   let id = 1;
@@ -69,7 +72,7 @@ function parseServers(html: string): BrowserServer[] {
 
     try {
       // Extract server name from the anchor text (between > and </a>)
-      // The anchor contains colored spans, so strip tags to get plain name
+      // The anchor text contains colored spans, strip them to get plain name
       const anchorMatch = block.match(/^[^"]*"[^>]*>(.*?)<\/a>/s);
       if (!anchorMatch) continue;
 
@@ -77,14 +80,18 @@ function parseServers(html: string): BrowserServer[] {
       const name = decodeHtmlEntities(rawName);
       if (!name) continue;
 
-      // Extract players/maxPlayers from (N/M) pattern
-      const countMatch = block.match(/\(.*?(\d+).*?\/.*?(\d+).*?\)/);
+      // Extract players/maxPlayers from the (N/M) pattern after the anchor
+      // HTML looks like: <span style="color:#ffffff">- (</span><span style="color:#00dd00">4</span><span style="color:#ffffff">/</span><span style="color:#44dd44">16</span>
+      // After stripping tags: - (4/16)
+      const afterAnchor = block.substring(anchorMatch[0].length);
+      const plainAfter = stripHtmlTags(afterAnchor);
+      const countMatch = plainAfter.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/);
       const playerCount = countMatch ? parseInt(countMatch[1]) : 0;
       const maxPlayers = countMatch ? parseInt(countMatch[2]) : 16;
 
-      // Extract player names from "Players: name1, name2" 
+      // Extract player names from "Players: name1, name2"
       let playerNames: string[] = [];
-      const playersMatch = block.match(/Players:\s*(.*?)(?:<br|$)/i);
+      const playersMatch = afterAnchor.match(/Players:\s*(.*?)(?:<br|<a\s|$)/i);
       if (playersMatch) {
         const playersText = stripHtmlTags(playersMatch[1]).trim();
         if (playersText) {
@@ -92,7 +99,7 @@ function parseServers(html: string): BrowserServer[] {
         }
       }
 
-      // Extract host:port from armagetronad:// link
+      // Extract host:port from armagetronad:// link (if present in this block)
       let host = '';
       let port = 4534;
       const uriMatch = block.match(/armagetronad:\/\/([^:"\s]+):(\d+)/);
@@ -103,16 +110,25 @@ function parseServers(html: string): BrowserServer[] {
 
       // Extract version
       let version = '';
-      const versionMatch = block.match(/Version:\s*([^\s<]+)/i);
+      const versionMatch = afterAnchor.match(/Version:\s*([^\s<]+)/i);
       if (versionMatch) {
         version = versionMatch[1].trim();
       }
 
       // Extract URL
       let serverUrl = '';
-      const urlMatch = block.match(/URL:\s*(https?:\/\/[^\s<]+)/i);
+      const urlMatch = afterAnchor.match(/URL:\s*(https?:\/\/[^\s<]+)/i);
       if (urlMatch) {
         serverUrl = urlMatch[1].trim();
+      }
+
+      // Determine game type from version string
+      let gameType = 'Armagetron';
+      if (version) {
+        if (version.includes('sty+ct')) gameType = 'sty+ct';
+        else if (version.includes('sty')) gameType = 'sty';
+        else if (version.includes('ct+ap')) gameType = 'ct+ap';
+        else gameType = version;
       }
 
       servers.push({
@@ -120,11 +136,9 @@ function parseServers(html: string): BrowserServer[] {
         name,
         host,
         port,
-        map: 'N/A',
         players: playerCount,
         maxPlayers,
-        ping: 0,
-        gameType: version || 'Armagetron',
+        gameType,
         version,
         playerNames,
         url: serverUrl,
@@ -146,7 +160,7 @@ Deno.serve(async (req) => {
   try {
     const now = Date.now();
     if (cachedServers && (now - cacheTime) < CACHE_TTL) {
-      return new Response(JSON.stringify({ servers: cachedServers, cached: true }), {
+      return new Response(JSON.stringify({ servers: cachedServers, cached: true, count: cachedServers.length }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -157,7 +171,7 @@ Deno.serve(async (req) => {
 
     console.log(`Fetched ${servers.length} servers from legacy browser`);
 
-    return new Response(JSON.stringify({ servers, cached: false }), {
+    return new Response(JSON.stringify({ servers, cached: false, count: servers.length }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
