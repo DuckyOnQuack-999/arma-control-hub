@@ -34,7 +34,7 @@ export function ServerControlBar({ status, onStart, onStop, onRestart, onKill, l
         className="bg-neon-yellow/20 text-neon-yellow border border-neon-yellow/50 hover:bg-neon-yellow/30">
         <RotateCcw className="h-3.5 w-3.5" /> Restart
       </Button>
-      <Button size="sm" variant="destructive" disabled={isStopped || loading} onClick={() => setConfirmAction('kill')}>
+      <Button size="sm" variant="destructive" disabled={(status === 'offline') || loading} onClick={() => setConfirmAction('kill')}>
         <Skull className="h-3.5 w-3.5" /> Kill
       </Button>
 
