@@ -13,6 +13,9 @@ interface BrowserServer {
   maxPlayers: number;
   ping: number;
   gameType: string;
+  version: string;
+  playerNames: string[];
+  url: string;
 }
 
 // Simple in-memory cache
@@ -20,71 +23,116 @@ let cachedServers: BrowserServer[] | null = null;
 let cacheTime = 0;
 const CACHE_TTL = 30000; // 30 seconds
 
-async function fetchMasterServerList(): Promise<BrowserServer[]> {
-  // Try scraping the Armagetron master server HTTP list
-  // The master server provides a list via HTTP at known endpoints
-  const masterUrls = [
-    'http://master1.armagetronad.net/arma.htm',
-    'http://master2.armagetronad.net/arma.htm',
-  ];
-
-  for (const url of masterUrls) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-
-      const response = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeout);
-
-      if (!response.ok) continue;
-
-      const html = await response.text();
-      return parseMasterServerHtml(html);
-    } catch (e) {
-      console.log(`Failed to fetch ${url}:`, e);
-      continue;
-    }
-  }
-
-  // Fallback: return empty list if master servers unreachable
-  console.log('All master servers unreachable, returning empty list');
-  return [];
+function stripHtmlTags(html: string): string {
+  return html.replace(/<[^>]*>/g, '');
 }
 
-function parseMasterServerHtml(html: string): BrowserServer[] {
+function decodeHtmlEntities(text: string): string {
+  return text.replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)));
+}
+
+async function fetchServerList(): Promise<BrowserServer[]> {
+  const url = 'https://browser.armanelgtron.tk/legacy/?info=_';
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      console.error(`Legacy browser returned ${response.status}`);
+      return [];
+    }
+
+    const html = await response.text();
+    return parseServers(html);
+  } catch (e) {
+    clearTimeout(timeout);
+    console.error('Failed to fetch legacy browser:', e);
+    return [];
+  }
+}
+
+function parseServers(html: string): BrowserServer[] {
   const servers: BrowserServer[] = [];
-  // The master server HTML contains server info in a structured format
-  // Each server entry typically has: name, host:port, players/max, map
-  const lines = html.split('\n');
+
+  // Split by server anchor tags: <a name="ServerName" href="...">
+  // Each server block starts with <a name= and contains name, player count, player list
+  // and optionally an armagetronad:// link
+  const serverBlocks = html.split(/<a name="/);
+
   let id = 1;
+  for (let i = 1; i < serverBlocks.length; i++) {
+    const block = serverBlocks[i];
 
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('<') || trimmed.startsWith('#')) continue;
+    try {
+      // Extract server name from the anchor text (between > and </a>)
+      // The anchor contains colored spans, so strip tags to get plain name
+      const anchorMatch = block.match(/^[^"]*"[^>]*>(.*?)<\/a>/s);
+      if (!anchorMatch) continue;
 
-    // Try to parse common master server list formats
-    // Format varies but typically: host:port name players/max
-    const parts = trimmed.split(/\s+/);
-    if (parts.length < 2) continue;
+      const rawName = stripHtmlTags(anchorMatch[1]).trim();
+      const name = decodeHtmlEntities(rawName);
+      if (!name) continue;
 
-    const hostPort = parts[0];
-    const [host, portStr] = hostPort.split(':');
-    const port = parseInt(portStr || '4534');
-    if (!host || isNaN(port)) continue;
+      // Extract players/maxPlayers from (N/M) pattern
+      const countMatch = block.match(/\(.*?(\d+).*?\/.*?(\d+).*?\)/);
+      const playerCount = countMatch ? parseInt(countMatch[1]) : 0;
+      const maxPlayers = countMatch ? parseInt(countMatch[2]) : 16;
 
-    const name = parts.slice(1).join(' ').replace(/0x[0-9a-fA-F]+/g, '').trim() || `Server ${id}`;
+      // Extract player names from "Players: name1, name2" 
+      let playerNames: string[] = [];
+      const playersMatch = block.match(/Players:\s*(.*?)(?:<br|$)/i);
+      if (playersMatch) {
+        const playersText = stripHtmlTags(playersMatch[1]).trim();
+        if (playersText) {
+          playerNames = playersText.split(',').map(p => decodeHtmlEntities(p.trim())).filter(Boolean);
+        }
+      }
 
-    servers.push({
-      id: id++,
-      name,
-      host,
-      port,
-      map: 'Unknown',
-      players: 0,
-      maxPlayers: 16,
-      ping: Math.floor(Math.random() * 150) + 10,
-      gameType: 'Classic',
-    });
+      // Extract host:port from armagetronad:// link
+      let host = '';
+      let port = 4534;
+      const uriMatch = block.match(/armagetronad:\/\/([^:"\s]+):(\d+)/);
+      if (uriMatch) {
+        host = uriMatch[1];
+        port = parseInt(uriMatch[2]);
+      }
+
+      // Extract version
+      let version = '';
+      const versionMatch = block.match(/Version:\s*([^\s<]+)/i);
+      if (versionMatch) {
+        version = versionMatch[1].trim();
+      }
+
+      // Extract URL
+      let serverUrl = '';
+      const urlMatch = block.match(/URL:\s*(https?:\/\/[^\s<]+)/i);
+      if (urlMatch) {
+        serverUrl = urlMatch[1].trim();
+      }
+
+      servers.push({
+        id: id++,
+        name,
+        host,
+        port,
+        map: 'N/A',
+        players: playerCount,
+        maxPlayers,
+        ping: 0,
+        gameType: version || 'Armagetron',
+        version,
+        playerNames,
+        url: serverUrl,
+      });
+    } catch (e) {
+      console.error('Error parsing server block:', e);
+      continue;
+    }
   }
 
   return servers;
@@ -103,9 +151,11 @@ Deno.serve(async (req) => {
       });
     }
 
-    const servers = await fetchMasterServerList();
+    const servers = await fetchServerList();
     cachedServers = servers;
     cacheTime = now;
+
+    console.log(`Fetched ${servers.length} servers from legacy browser`);
 
     return new Response(JSON.stringify({ servers, cached: false }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -117,7 +167,7 @@ Deno.serve(async (req) => {
       servers: cachedServers || [],
       error: error instanceof Error ? error.message : 'Failed to fetch server list',
     }), {
-      status: 200, // Return 200 with empty list rather than error
+      status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }

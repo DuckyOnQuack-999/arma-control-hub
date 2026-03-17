@@ -65,7 +65,7 @@ const ServerBrowserPage = () => {
           <h1 className="font-display text-2xl font-bold tracking-wide">Server Browser</h1>
           <p className="text-sm text-muted-foreground">
             {servers.length} servers · Last refreshed {lastRefreshed}
-            {servers.length === 0 && ' · Server browser requires an external master server query agent'}
+            {servers.length === 0 && ' · No servers currently online'}
           </p>
         </div>
         <Button onClick={() => refetch()} variant="outline" size="sm">
