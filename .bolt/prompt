@@ -1,0 +1,362 @@
+# 🎮 RetroCycles / Armagetron Advanced — Control Panel (Docs-Aligned Spec)
+
+## CORE TRUTHS (FROM ENGINE)
+
+* Config system = console commands persisted to `.cfg`
+* Format: `KEY VALUE` (space-separated, full line parsed)
+* Dedicated server = CLI binary (`armagetronad-dedicated`)
+* All control = stdin console (NOT shell)
+* Default port: UDP 4534
+* Public listing requires: `TALK_TO_MASTER 1`
+* `everytime.cfg` executes before each round
+* RetroCycles == Armagetron Advanced (same engine)
+
+---
+
+## STACK
+
+Backend: Node.js 20 + Express 5 + TS
+PTY: node-pty
+WS: ws
+DB: SQLite (better-sqlite3)
+Auth: JWT + bcrypt
+Frontend: React 18 + Vite + TS
+State: Zustand + React Query
+UI: Tailwind
+
+---
+
+## SYSTEM GOAL
+
+Build a **fully working multi-server control panel** for Armagetron/RetroCycles.
+
+No placeholders. No mocks. Real PTY, real processes, real config parsing.
+
+---
+
+## CORE FEATURES
+
+### Server Control
+
+* Start/stop/restart/kill via PTY
+* Send raw console commands (stdin)
+* Status tracking (running/stopped/etc)
+
+### Console
+
+* Live PTY output via WebSocket
+* Buffered history (500 lines)
+* Command input
+
+### Config
+
+* Parse `.cfg` files as KEY VALUE
+* Edit via GUI + raw editor
+* Write atomically
+* Respect file roles:
+
+  * `settings_custom.cfg`
+  * `server_info.cfg`
+  * `everytime.cfg` (round execution)
+
+### Players
+
+* Derived from logs (no API exists)
+* Track:
+
+  * joins/leaves
+  * chat
+  * kills
+* Actions:
+
+  * KICK
+  * BAN
+  * SILENCE
+
+### Logs
+
+* Parse console/log output → structured events
+* Store in DB
+* Provide search/filter
+
+### Metrics
+
+* CPU/memory via pidusage
+* Player count from parsed events
+* Store time-series
+
+### Server Browser
+
+* UDP query master servers
+* Fallback: scrape stats HTML
+* Cache results
+
+---
+
+## BACKEND
+
+### Process Manager
+
+* Spawn via node-pty
+
+* Maintain Map<serverId, PTY>
+
+* Methods:
+
+  * start
+  * stop (send `QUIT`, fallback SIGTERM)
+  * kill (SIGKILL)
+  * restart
+  * sendCommand
+
+* On crash:
+
+  * auto-restart (if enabled)
+  * log event
+
+---
+
+### Console Handling
+
+* Strip ANSI
+* Broadcast lines
+* Store last 500 lines
+* Emit to subscribers
+
+---
+
+### Log Parsing
+
+Parse patterns:
+
+* PlayerEntered → join
+* PlayerLeft → leave
+* Kill → kill
+* Chat → chat
+* Ban/Kick → moderation
+* New round → round_start
+
+Emit structured events.
+
+---
+
+### Config Parser
+
+* parse(): string → object
+* serialize(): object → string
+* Preserve multi-word values
+* Sort keys
+* Atomic writes
+
+---
+
+### Metrics Collector
+
+Every 5s:
+
+* pidusage → cpu/memory
+* player count (from state)
+* insert into DB
+* broadcast WS
+
+Prune >7 days
+
+---
+
+### Server Query
+
+* UDP ping server
+* Extract:
+
+  * player count
+  * name
+  * map
+* Timeout: 3s
+
+---
+
+### Master Query
+
+* Try UDP (multiple masters)
+* Fallback: scrape stats site
+* Return normalized server list
+* Cache 30s
+
+---
+
+## API
+
+### Auth
+
+* register/login/refresh/logout
+* bcrypt + JWT
+* roles:
+
+  * admin
+  * operator
+  * viewer
+
+---
+
+### Servers
+
+* CRUD
+* Validate:
+
+  * binary path exists
+  * port not duplicated
+
+---
+
+### Control
+
+* start/stop/restart/kill
+* send command (≤500 chars)
+
+---
+
+### Config
+
+* read/write parsed configs
+* raw file access (whitelisted)
+* prevent path traversal
+
+---
+
+### Players
+
+* list (from memory state)
+* kick/ban/silence
+* persist bans
+
+---
+
+### Logs
+
+* query structured events
+* tail raw file
+
+---
+
+### Metrics
+
+* historical + aggregated
+* current snapshot
+
+---
+
+### Browser
+
+* list public servers
+* query single server
+
+---
+
+## WEBSOCKET
+
+### /ws
+
+Requires JWT
+
+Channels:
+
+* console:serverId
+* metrics:serverId
+
+---
+
+### Console Channel
+
+* send history
+* stream output
+* accept commands (operator/admin)
+
+---
+
+### Metrics Channel
+
+* push updates every 5s
+
+---
+
+## FRONTEND
+
+### Pages
+
+* Dashboard
+* Server Detail (tabs)
+* Console
+* Config Editor
+* Players
+* Logs
+* Metrics
+* Browser
+
+---
+
+### Console UI
+
+* virtualized output
+* auto-scroll
+* command history
+* color-coded events
+
+---
+
+### Config UI
+
+* sections (gameplay/network/etc)
+* type-aware inputs
+* raw editor fallback
+
+---
+
+### Metrics UI
+
+* CPU line chart
+* Memory area chart
+* Player bar chart
+
+---
+
+## SECURITY
+
+* Helmet + CORS
+* Rate limiting
+* Path validation
+* No shell execution
+* Prepared SQL only
+
+---
+
+## STARTUP
+
+1. Load env
+2. Init DB
+3. Init process manager
+4. Start metrics collector
+5. Setup Express
+6. Mount routes
+7. Start HTTP server
+8. Attach WS
+
+---
+
+## REQUIREMENTS
+
+* Real PTY console (mandatory)
+* Config = true KEY VALUE system
+* Player state from logs (not API)
+* Multi-server support
+* Working server browser (UDP + fallback)
+* No placeholders anywhere
+
+---
+
+## README
+
+* Setup steps
+* Docker usage
+* Env vars
+* Features
+* MIT license
