@@ -137,22 +137,33 @@ const ServerBrowserPage = () => {
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  ['Host', `${inspectServer.host}:${inspectServer.port}`],
-                  ['Map', inspectServer.map],
+                  ...(inspectServer.host ? [['Host', `${inspectServer.host}:${inspectServer.port}`]] : []),
                   ['Players', `${inspectServer.players} / ${inspectServer.maxPlayers}`],
-                  ['Ping', `${inspectServer.ping}ms`],
-                  ['Game Type', inspectServer.gameType],
+                  ...(inspectServer.version ? [['Version', inspectServer.version]] : []),
+                  ...(inspectServer.url ? [['URL', inspectServer.url]] : []),
                 ].map(([label, value]) => (
                   <div key={label}>
                     <span className="text-xs text-muted-foreground">{label}</span>
-                    <p className="font-mono text-xs">{value}</p>
+                    <p className="font-mono text-xs break-all">{value}</p>
                   </div>
                 ))}
               </div>
+              {inspectServer.playerNames && inspectServer.playerNames.length > 0 && (
+                <div>
+                  <span className="text-xs text-muted-foreground">Online Players</span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {inspectServer.playerNames.map((name, i) => (
+                      <span key={i} className="inline-flex rounded-full bg-muted px-2 py-0.5 text-xs">{name}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="flex gap-2 pt-2">
-                <Button size="sm" className="flex-1" onClick={() => { copyUri(inspectServer.host, inspectServer.port); }}>
-                  <Copy className="h-3.5 w-3.5 mr-1" /> Copy URI
-                </Button>
+                {inspectServer.host && (
+                  <Button size="sm" className="flex-1" onClick={() => { copyUri(inspectServer.host, inspectServer.port); }}>
+                    <Copy className="h-3.5 w-3.5 mr-1" /> Copy URI
+                  </Button>
+                )}
               </div>
             </div>
           )}
