@@ -17,12 +17,12 @@ export function ServerControlBar({ status, onStart, onStop, onRestart, onKill, l
   const [confirmAction, setConfirmAction] = useState<null | 'stop' | 'restart' | 'kill'>(null);
 
   const isRunning = status === 'online';
-  const isStopped = status === 'offline';
+  const canStart = status === 'offline' || status === 'crashed';
   const isBusy = status === 'starting' || status === 'stopping';
 
   return (
     <div className="flex items-center gap-2">
-      <Button size="sm" disabled={!isStopped || loading} onClick={onStart}
+      <Button size="sm" disabled={!canStart || loading} onClick={onStart}
         className="bg-neon-green/20 text-neon-green border border-neon-green/50 hover:bg-neon-green/30">
         <Play className="h-3.5 w-3.5" /> Start
       </Button>
@@ -34,7 +34,7 @@ export function ServerControlBar({ status, onStart, onStop, onRestart, onKill, l
         className="bg-neon-yellow/20 text-neon-yellow border border-neon-yellow/50 hover:bg-neon-yellow/30">
         <RotateCcw className="h-3.5 w-3.5" /> Restart
       </Button>
-      <Button size="sm" variant="destructive" disabled={isStopped || loading} onClick={() => setConfirmAction('kill')}>
+      <Button size="sm" variant="destructive" disabled={(status === 'offline') || loading} onClick={() => setConfirmAction('kill')}>
         <Skull className="h-3.5 w-3.5" /> Kill
       </Button>
 

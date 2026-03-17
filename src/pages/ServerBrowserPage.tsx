@@ -6,12 +6,12 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
-import { RefreshCw, Copy, ArrowUpDown, Search } from 'lucide-react';
+import { RefreshCw, Copy, ArrowUpDown, Search, Users, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import type { BrowserServer } from '@/data/types';
 
-type SortKey = 'name' | 'map' | 'players' | 'ping' | 'gameType';
+type SortKey = 'name' | 'players' | 'gameType';
 
 const ServerBrowserPage = () => {
   const [search, setSearch] = useState('');
@@ -22,13 +22,20 @@ const ServerBrowserPage = () => {
   const { data: servers = [], isLoading, refetch, dataUpdatedAt } = useQuery({
     queryKey: ['browser-servers'],
     queryFn: getBrowserServers,
+    refetchInterval: 60000,
   });
+
+  const totalPlayers = useMemo(() => servers.reduce((sum, s) => sum + s.players, 0), [servers]);
 
   const filtered = useMemo(() => {
     let list = servers;
     if (search) {
       const s = search.toLowerCase();
-      list = list.filter(sv => sv.name.toLowerCase().includes(s) || sv.map.toLowerCase().includes(s) || sv.gameType.toLowerCase().includes(s));
+      list = list.filter(sv =>
+        sv.name.toLowerCase().includes(s) ||
+        sv.gameType.toLowerCase().includes(s) ||
+        sv.playerNames?.some(p => p.toLowerCase().includes(s))
+      );
     }
     list.sort((a, b) => {
       const av = a[sortKey]; const bv = b[sortKey];
@@ -48,12 +55,6 @@ const ServerBrowserPage = () => {
     toast({ title: 'Copied!', description: `armagetronad://${host}:${port}` });
   };
 
-  const pingBadge = (ping: number) => {
-    if (ping < 50) return 'bg-neon-green/20 text-neon-green';
-    if (ping <= 150) return 'bg-neon-yellow/20 text-neon-yellow';
-    return 'bg-neon-red/20 text-neon-red';
-  };
-
   const lastRefreshed = dataUpdatedAt ? `${Math.floor((Date.now() - dataUpdatedAt) / 1000)}s ago` : 'never';
 
   if (isLoading) return <LoadingSpinner />;
@@ -64,8 +65,7 @@ const ServerBrowserPage = () => {
         <div>
           <h1 className="font-display text-2xl font-bold tracking-wide">Server Browser</h1>
           <p className="text-sm text-muted-foreground">
-            {servers.length} servers · Last refreshed {lastRefreshed}
-            {servers.length === 0 && ' · No servers currently online'}
+            {servers.length} servers · {totalPlayers} players online · Updated {lastRefreshed}
           </p>
         </div>
         <Button onClick={() => refetch()} variant="outline" size="sm">
@@ -73,16 +73,20 @@ const ServerBrowserPage = () => {
         </Button>
       </div>
 
-      <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search servers, maps, game types..." className="max-w-sm" />
+      <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search servers, types, players..." className="max-w-sm" />
 
       <div className="rounded-lg border border-border overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="border-border hover:bg-transparent">
-              {(['name', 'map', 'players', 'ping', 'gameType'] as SortKey[]).map(key => (
-                <TableHead key={key} className="cursor-pointer select-none" onClick={() => toggleSort(key)}>
+              {([
+                { key: 'name' as SortKey, label: 'Server' },
+                { key: 'players' as SortKey, label: 'Players' },
+                { key: 'gameType' as SortKey, label: 'Type' },
+              ]).map(col => (
+                <TableHead key={col.key} className="cursor-pointer select-none" onClick={() => toggleSort(col.key)}>
                   <div className="flex items-center gap-1">
-                    {key === 'gameType' ? 'Type' : key.charAt(0).toUpperCase() + key.slice(1)}
+                    {col.label}
                     <ArrowUpDown className="h-3 w-3 text-muted-foreground" />
                   </div>
                 </TableHead>
@@ -92,24 +96,29 @@ const ServerBrowserPage = () => {
           </TableHeader>
           <TableBody>
             {filtered.length === 0 && (
-              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">No servers found</TableCell></TableRow>
+              <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-8">No servers found</TableCell></TableRow>
             )}
             {filtered.map(sv => (
               <TableRow key={sv.id} className="border-border">
-                <TableCell className="font-semibold max-w-64 truncate">{sv.name}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">{sv.map}</TableCell>
                 <TableCell>
-                  <span className={sv.players >= sv.maxPlayers ? 'text-neon-red' : 'text-foreground'}>
+                  <div className="font-semibold max-w-72 truncate">{sv.name}</div>
+                  {sv.playerNames && sv.playerNames.length > 0 && (
+                    <div className="text-xs text-muted-foreground mt-0.5 max-w-72 truncate">
+                      <Users className="h-3 w-3 inline mr-1" />
+                      {sv.playerNames.join(', ')}
+                    </div>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <span className={cn(
+                    'font-mono font-bold',
+                    sv.players >= sv.maxPlayers ? 'text-destructive' : sv.players > 0 ? 'text-primary' : 'text-muted-foreground'
+                  )}>
                     {sv.players}
                   </span>
-                  <span className="text-muted-foreground"> / {sv.maxPlayers}</span>
+                  <span className="text-muted-foreground font-mono"> / {sv.maxPlayers}</span>
                 </TableCell>
-                <TableCell>
-                  <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs', pingBadge(sv.ping))}>
-                    {sv.ping}ms
-                  </span>
-                </TableCell>
-                <TableCell className="text-sm">{sv.gameType}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{sv.gameType}</TableCell>
                 <TableCell className="text-right space-x-1">
                   <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setInspectServer(sv)} title="Inspect">
                     <Search className="h-3.5 w-3.5" />
@@ -137,8 +146,8 @@ const ServerBrowserPage = () => {
                 {[
                   ...(inspectServer.host ? [['Host', `${inspectServer.host}:${inspectServer.port}`]] : []),
                   ['Players', `${inspectServer.players} / ${inspectServer.maxPlayers}`],
+                  ['Type', inspectServer.gameType],
                   ...(inspectServer.version ? [['Version', inspectServer.version]] : []),
-                  ...(inspectServer.url ? [['URL', inspectServer.url]] : []),
                 ].map(([label, value]) => (
                   <div key={label}>
                     <span className="text-xs text-muted-foreground">{label}</span>
@@ -148,7 +157,7 @@ const ServerBrowserPage = () => {
               </div>
               {inspectServer.playerNames && inspectServer.playerNames.length > 0 && (
                 <div>
-                  <span className="text-xs text-muted-foreground">Online Players</span>
+                  <span className="text-xs text-muted-foreground">Online Players ({inspectServer.playerNames.length})</span>
                   <div className="flex flex-wrap gap-1 mt-1">
                     {inspectServer.playerNames.map((name, i) => (
                       <span key={i} className="inline-flex rounded-full bg-muted px-2 py-0.5 text-xs">{name}</span>
@@ -158,8 +167,15 @@ const ServerBrowserPage = () => {
               )}
               <div className="flex gap-2 pt-2">
                 {inspectServer.host && (
-                  <Button size="sm" className="flex-1" onClick={() => { copyUri(inspectServer.host, inspectServer.port); }}>
+                  <Button size="sm" className="flex-1" onClick={() => copyUri(inspectServer.host, inspectServer.port)}>
                     <Copy className="h-3.5 w-3.5 mr-1" /> Copy URI
+                  </Button>
+                )}
+                {inspectServer.url && (
+                  <Button size="sm" variant="outline" className="flex-1" asChild>
+                    <a href={inspectServer.url} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-3.5 w-3.5 mr-1" /> Website
+                    </a>
                   </Button>
                 )}
               </div>

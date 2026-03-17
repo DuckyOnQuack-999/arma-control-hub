@@ -47,10 +47,8 @@ export interface BrowserServer {
   name: string;
   host: string;
   port: number;
-  map: string;
   players: number;
   maxPlayers: number;
-  ping: number;
   gameType: string;
   version?: string;
   playerNames?: string[];
