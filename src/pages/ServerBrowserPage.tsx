@@ -111,10 +111,14 @@ const ServerBrowserPage = () => {
                 </TableCell>
                 <TableCell className="text-sm">{sv.gameType}</TableCell>
                 <TableCell className="text-right space-x-1">
-                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setInspectServer(sv)}>
+                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setInspectServer(sv)} title="Inspect">
                     <Search className="h-3.5 w-3.5" />
                   </Button>
-                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => copyUri(sv.host, sv.port)}>
+                  {sv.host && (
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => copyUri(sv.host, sv.port)} title="Copy URI">
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
                 </TableCell>
