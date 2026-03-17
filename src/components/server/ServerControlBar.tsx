@@ -22,7 +22,7 @@ export function ServerControlBar({ status, onStart, onStop, onRestart, onKill, l
 
   return (
     <div className="flex items-center gap-2">
-      <Button size="sm" disabled={!isStopped || loading} onClick={onStart}
+      <Button size="sm" disabled={!canStart || loading} onClick={onStart}
         className="bg-neon-green/20 text-neon-green border border-neon-green/50 hover:bg-neon-green/30">
         <Play className="h-3.5 w-3.5" /> Start
       </Button>
