@@ -65,7 +65,7 @@ const ServerBrowserPage = () => {
           <h1 className="font-display text-2xl font-bold tracking-wide">Server Browser</h1>
           <p className="text-sm text-muted-foreground">
             {servers.length} servers · Last refreshed {lastRefreshed}
-            {servers.length === 0 && ' · Server browser requires an external master server query agent'}
+            {servers.length === 0 && ' · No servers currently online'}
           </p>
         </div>
         <Button onClick={() => refetch()} variant="outline" size="sm">
@@ -111,12 +111,14 @@ const ServerBrowserPage = () => {
                 </TableCell>
                 <TableCell className="text-sm">{sv.gameType}</TableCell>
                 <TableCell className="text-right space-x-1">
-                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setInspectServer(sv)}>
+                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setInspectServer(sv)} title="Inspect">
                     <Search className="h-3.5 w-3.5" />
                   </Button>
-                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => copyUri(sv.host, sv.port)}>
-                    <Copy className="h-3.5 w-3.5" />
-                  </Button>
+                  {sv.host && (
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => copyUri(sv.host, sv.port)} title="Copy URI">
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -133,22 +135,33 @@ const ServerBrowserPage = () => {
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  ['Host', `${inspectServer.host}:${inspectServer.port}`],
-                  ['Map', inspectServer.map],
+                  ...(inspectServer.host ? [['Host', `${inspectServer.host}:${inspectServer.port}`]] : []),
                   ['Players', `${inspectServer.players} / ${inspectServer.maxPlayers}`],
-                  ['Ping', `${inspectServer.ping}ms`],
-                  ['Game Type', inspectServer.gameType],
+                  ...(inspectServer.version ? [['Version', inspectServer.version]] : []),
+                  ...(inspectServer.url ? [['URL', inspectServer.url]] : []),
                 ].map(([label, value]) => (
                   <div key={label}>
                     <span className="text-xs text-muted-foreground">{label}</span>
-                    <p className="font-mono text-xs">{value}</p>
+                    <p className="font-mono text-xs break-all">{value}</p>
                   </div>
                 ))}
               </div>
+              {inspectServer.playerNames && inspectServer.playerNames.length > 0 && (
+                <div>
+                  <span className="text-xs text-muted-foreground">Online Players</span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {inspectServer.playerNames.map((name, i) => (
+                      <span key={i} className="inline-flex rounded-full bg-muted px-2 py-0.5 text-xs">{name}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="flex gap-2 pt-2">
-                <Button size="sm" className="flex-1" onClick={() => { copyUri(inspectServer.host, inspectServer.port); }}>
-                  <Copy className="h-3.5 w-3.5 mr-1" /> Copy URI
-                </Button>
+                {inspectServer.host && (
+                  <Button size="sm" className="flex-1" onClick={() => { copyUri(inspectServer.host, inspectServer.port); }}>
+                    <Copy className="h-3.5 w-3.5 mr-1" /> Copy URI
+                  </Button>
+                )}
               </div>
             </div>
           )}

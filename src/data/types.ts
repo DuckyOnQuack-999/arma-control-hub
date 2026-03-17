@@ -52,6 +52,9 @@ export interface BrowserServer {
   maxPlayers: number;
   ping: number;
   gameType: string;
+  version?: string;
+  playerNames?: string[];
+  url?: string;
 }
 
 // User info for auth store

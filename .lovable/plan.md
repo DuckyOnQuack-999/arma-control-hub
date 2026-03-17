@@ -1,49 +1,71 @@
 
 
-# Fix Server Browser — Scrape Real Server Data
+# RetroCycles Panel — Gap Analysis & Enhancement Plan
 
-## Problem
-The `server-browser` edge function tries to fetch from `master1.armagetronad.net` and `master2.armagetronad.net` which are unreachable (connection refused / timeout). The server browser shows 0 servers.
+The current codebase is already well-built with the cyberpunk theme, mock API, all major pages, and core functionality. Here's what needs improvement to match the full spec:
 
-## Solution
-Rewrite the edge function to scrape `https://browser.armanelgtron.tk/legacy/` which is a working, server-side rendered page containing all active Armagetron servers with names, player counts, and player lists.
+## Missing Features
 
-The legacy page HTML contains entries like:
-```text
-<a name="ServerName" href="...">ServerName</a> - (4/16)
-Players: player1, player2
-```
+### 1. Error Boundary Component
+- Create `src/components/shared/ErrorBoundary.tsx` — React error boundary with retry button
+- Wrap main app content with it
 
-And when queried with `?info=ServerName`, it additionally includes:
-```text
-<a href="armagetronad://52.144.47.87:4536">Click here to enter</a>
-Version: 0.2.9-sty+ct+ap
-URL: https://retrocycles.net
-```
+### 2. Maps Tab (missing entirely)
+- Create `src/components/tabs/MapsTab.tsx` — list, upload, delete map/resource files
+- Add Maps tab to ServerDetailPage
 
-## Approach
-1. **Fetch the legacy page** — single HTTP GET to `https://browser.armanelgtron.tk/legacy/`
-2. **Parse the HTML** using regex to extract: server name (from anchor text), players/maxPlayers (from the `(N/M)` pattern), player list, and host:port (from `armagetronad://` links if present on the page)
-3. **For host:port data** — the main legacy listing doesn't include host:port. We have two options:
-   - Option A: Fetch each server's `?info=` page (too slow for 40+ servers)
-   - Option B: Scrape the main page only, return name/players/maxPlayers without host:port (still useful for browsing)
-   - **Best option**: Fetch a single `?info=` page with all servers — actually the `?info=` page still shows the full list, just with extra detail for the queried server. So we can fetch `?info=` for one server and parse ALL `armagetronad://` links on the page for every server.
+### 3. Login Page — Registration Mode
+- The spec says first-run (no users) should show registration form
+- Current login page only has login; add a toggle for registration mode
 
-Actually, looking at the HTML more carefully, the `?info=` page includes `armagetronad://` links for ALL listed servers that have them, not just the one queried. So fetching any single `?info=` URL will give us host:port for all servers.
+### 4. Settings Page Enhancements
+- Add ability to change user roles (admin only)
+- Add delete user action
+- Add "Add User" form for admin
+- Add app settings section (theme toggle, notification preferences)
 
-## Changes
+### 5. Console Tab — Missing Features
+- Command suggestions for known Armagetron commands (autocomplete dropdown)
+- Reconnect button when disconnected
+- Toggle for connect/disconnect simulation
 
-### `supabase/functions/server-browser/index.ts`
-- Replace `fetchMasterServerList()` to fetch `https://browser.armanelgtron.tk/legacy/?info=_` (dummy info param to get the full page with armagetronad:// links)
-- Parse HTML to extract for each server: name, players, maxPlayers, player names, host, port, version
-- Keep the 30-second cache
-- Add `version`, `playerNames`, and `url` fields to the response
+### 6. Server Browser — Missing "Query/Inspect" Action
+- Add an "Inspect" button per server row that opens a modal with detailed server info
 
-### `src/data/types.ts`
-- Add optional `version`, `playerNames`, `url` fields to `BrowserServer`
+### 7. Logs Tab — Missing Features  
+- Date range picker filter
+- Toggle to raw file view with tail mode
+- Infinite scroll / load more pagination
 
-### `src/pages/ServerBrowserPage.tsx`
-- Show player names in the inspect dialog
-- Show version and URL if available
-- Remove the "requires external master server query agent" message
+### 8. Config Tab — Raw Editor File Switching
+- Currently raw editor doesn't reload content when switching files; fix to fetch per-file content
+
+## UI/UX Polish
+
+### 9. Page Transitions
+- Add CSS transitions on route changes for smooth navigation feel
+
+### 10. Sidebar Active State Enhancement
+- Add animated glow indicator on active nav item
+
+### 11. Server Card — Current Map Display Fix
+- Offline servers show empty map string; should show "N/A" or hide
+
+### 12. TopBar Enhancement
+- Add notification bell icon (mock unread count)
+- Add server selector dropdown in the top bar
+
+## Implementation Steps
+
+1. **Create ErrorBoundary** — standard React class component with fallback UI
+2. **Create MapsTab** — mock data for maps, list with delete/upload UI, add to ServerDetailPage tabs
+3. **Enhance LoginPage** — add registration mode toggle, wire to `api.register()`
+4. **Enhance SettingsPage** — add user CRUD actions, add app settings section with theme toggle
+5. **Enhance ConsoleTab** — add command autocomplete suggestions, reconnect button
+6. **Enhance ServerBrowserPage** — add inspect modal per server
+7. **Enhance LogsTab** — add date range filter, raw file toggle, load-more pagination
+8. **Fix ConfigTab** — raw editor file switching loads correct content
+9. **Add MapsTab mock data** — add map file list to mockData and mockApi
+10. **TopBar notification bell** — add to AppShell header
+11. **Minor UI polish** — page transitions, server card offline state, glow effects
 
