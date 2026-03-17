@@ -17,7 +17,7 @@ export function ServerControlBar({ status, onStart, onStop, onRestart, onKill, l
   const [confirmAction, setConfirmAction] = useState<null | 'stop' | 'restart' | 'kill'>(null);
 
   const isRunning = status === 'online';
-  const isStopped = status === 'offline';
+  const canStart = status === 'offline' || status === 'crashed';
   const isBusy = status === 'starting' || status === 'stopping';
 
   return (
