@@ -18,16 +18,23 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
   isLoading: true,
 
   initialize: async () => {
-    // Listen for auth state changes
+    // Safety timeout — force loading to resolve after 5s
+    const timeout = setTimeout(() => {
+      if (get().isLoading) {
+        set({ isLoading: false });
+      }
+    }, 5000);
+
     supabase.auth.onAuthStateChange(async (event, session) => {
+      clearTimeout(timeout);
       if (session?.user) {
-        const { data: role } = await supabase.rpc('get_user_role', { _user_id: session.user.id });
+        let role: UserRole = 'viewer';
+        try {
+          const { data } = await supabase.rpc('get_user_role', { _user_id: session.user.id });
+          if (data) role = data as UserRole;
+        } catch {}
         set({
-          user: {
-            id: session.user.id,
-            email: session.user.email || '',
-            role: (role as UserRole) || 'viewer',
-          },
+          user: { id: session.user.id, email: session.user.email || '', role },
           isAuthenticated: true,
           isLoading: false,
         });
@@ -35,23 +42,6 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
         set({ user: null, isAuthenticated: false, isLoading: false });
       }
     });
-
-    // Check existing session
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      const { data: role } = await supabase.rpc('get_user_role', { _user_id: session.user.id });
-      set({
-        user: {
-          id: session.user.id,
-          email: session.user.email || '',
-          role: (role as UserRole) || 'viewer',
-        },
-        isAuthenticated: true,
-        isLoading: false,
-      });
-    } else {
-      set({ isLoading: false });
-    }
   },
 
   login: async (email, password) => {

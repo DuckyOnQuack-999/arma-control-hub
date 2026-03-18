@@ -19,7 +19,15 @@ const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuthStore();
-  if (isLoading) return <div className="flex min-h-screen items-center justify-center"><LoadingSpinner /></div>;
+  const [timedOut, setTimedOut] = useState(false);
+
+  useEffect(() => {
+    if (!isLoading) return;
+    const t = setTimeout(() => setTimedOut(true), 5000);
+    return () => clearTimeout(t);
+  }, [isLoading]);
+
+  if (isLoading && !timedOut) return <div className="flex min-h-screen items-center justify-center"><LoadingSpinner /></div>;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
