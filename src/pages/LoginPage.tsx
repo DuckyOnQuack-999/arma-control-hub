@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Terminal } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
-const LoginPage = () => {
+const LoginPage = forwardRef<HTMLDivElement>((_, ref) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
