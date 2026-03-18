@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, forwardRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Terminal } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
-const LoginPage = () => {
+const LoginPage = forwardRef<HTMLDivElement>((_, ref) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -51,7 +51,7 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background cyber-grid p-4">
+    <div ref={ref} className="flex min-h-screen items-center justify-center bg-background cyber-grid p-4">
       <div className="fixed inset-0 scanline" />
       <Card className="relative z-10 w-full max-w-md border-primary/30 bg-card glow-cyan">
         <CardHeader className="text-center">
@@ -128,6 +128,8 @@ const LoginPage = () => {
       </Card>
     </div>
   );
-};
+});
+
+LoginPage.displayName = 'LoginPage';
 
 export default LoginPage;
