@@ -128,6 +128,8 @@ const LoginPage = forwardRef<HTMLDivElement>((_, ref) => {
       </Card>
     </div>
   );
-};
+});
+
+LoginPage.displayName = 'LoginPage';
 
 export default LoginPage;
