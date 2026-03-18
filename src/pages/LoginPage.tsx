@@ -51,7 +51,7 @@ const LoginPage = forwardRef<HTMLDivElement>((_, ref) => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background cyber-grid p-4">
+    <div ref={ref} className="flex min-h-screen items-center justify-center bg-background cyber-grid p-4">
       <div className="fixed inset-0 scanline" />
       <Card className="relative z-10 w-full max-w-md border-primary/30 bg-card glow-cyan">
         <CardHeader className="text-center">
