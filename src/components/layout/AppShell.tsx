@@ -101,8 +101,37 @@ export function AppShell() {
             <Menu className="h-5 w-5" />
           </Button>
           <div className="flex-1" />
+
+          {/* Server Quick Switcher */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="ghost" className="gap-1.5 h-8 text-xs font-body text-muted-foreground">
+                <Server className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Servers</span>
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52 border-border bg-card">
+              {servers.length === 0 && (
+                <DropdownMenuItem disabled className="text-xs text-muted-foreground">No servers</DropdownMenuItem>
+              )}
+              {servers.map(s => (
+                <DropdownMenuItem key={s.id} onClick={() => navigate(`/servers/${s.id}`)} className="text-xs gap-2">
+                  <span className={`h-1.5 w-1.5 rounded-full ${s.status === 'online' ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+                  <span className="truncate">{s.name}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Notification Bell */}
           <Button size="icon" variant="ghost" className="relative h-8 w-8">
             <Bell className="h-4 w-4" />
+            {eventCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
+                {eventCount > 99 ? '99+' : eventCount}
+              </span>
+            )}
           </Button>
         </header>
         <main className="flex-1 overflow-auto p-4 lg:p-6 animate-in fade-in duration-200">
