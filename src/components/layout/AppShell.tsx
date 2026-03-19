@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { NavLink } from '@/components/NavLink';
 import { useAuthStore } from '@/stores/authStore';
+import { getServers, getRecentEventCount } from '@/lib/supabaseApi';
 import {
-  LayoutDashboard, Globe, Settings, Terminal, LogOut, Menu, X, ChevronDown, Bell,
+  LayoutDashboard, Globe, Settings, Terminal, LogOut, Menu, X, ChevronDown, Bell, Server,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,6 +22,18 @@ export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
+
+  const { data: servers = [] } = useQuery({
+    queryKey: ['servers'],
+    queryFn: getServers,
+    staleTime: 30_000,
+  });
+
+  const { data: eventCount = 0 } = useQuery({
+    queryKey: ['recent-event-count'],
+    queryFn: () => getRecentEventCount(1),
+    refetchInterval: 60_000,
+  });
 
   const handleLogout = async () => {
     await logout();
@@ -87,8 +101,37 @@ export function AppShell() {
             <Menu className="h-5 w-5" />
           </Button>
           <div className="flex-1" />
+
+          {/* Server Quick Switcher */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="ghost" className="gap-1.5 h-8 text-xs font-body text-muted-foreground">
+                <Server className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Servers</span>
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52 border-border bg-card">
+              {servers.length === 0 && (
+                <DropdownMenuItem disabled className="text-xs text-muted-foreground">No servers</DropdownMenuItem>
+              )}
+              {servers.map(s => (
+                <DropdownMenuItem key={s.id} onClick={() => navigate(`/servers/${s.id}`)} className="text-xs gap-2">
+                  <span className={`h-1.5 w-1.5 rounded-full ${s.status === 'online' ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+                  <span className="truncate">{s.name}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Notification Bell */}
           <Button size="icon" variant="ghost" className="relative h-8 w-8">
             <Bell className="h-4 w-4" />
+            {eventCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
+                {eventCount > 99 ? '99+' : eventCount}
+              </span>
+            )}
           </Button>
         </header>
         <main className="flex-1 overflow-auto p-4 lg:p-6 animate-in fade-in duration-200">

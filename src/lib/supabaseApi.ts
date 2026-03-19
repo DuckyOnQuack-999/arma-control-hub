@@ -268,6 +268,17 @@ export async function getAuditLog(limit = 50): Promise<Array<{ id: number; user_
   return (data ?? []) as any;
 }
 
+// ─── Recent Event Count (for notifications) ────────────────
+
+export async function getRecentEventCount(sinceHours = 1): Promise<number> {
+  const cutoff = new Date(Date.now() - sinceHours * 3600 * 1000).toISOString();
+  const { count, error } = await supabase.from('server_events')
+    .select('*', { count: 'exact', head: true })
+    .gte('occurred_at', cutoff);
+  if (error) return 0;
+  return count ?? 0;
+}
+
 // ─── Server Browser (via Edge Function) ─────────────────────
 
 export async function getBrowserServers(): Promise<BrowserServer[]> {

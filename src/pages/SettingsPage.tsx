@@ -12,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
-import { Trash2, Key, Shield, Clock } from 'lucide-react';
+import { Trash2, Key, Shield, Clock, Info } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from '@/hooks/use-toast';
 import type { UserRole } from '@/data/types';
 
@@ -159,7 +160,13 @@ const SettingsPage = () => {
           <CardHeader>
             <CardTitle className="font-display text-sm">User Management</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <Alert className="border-primary/30 bg-primary/5">
+              <Info className="h-4 w-4 text-primary" />
+              <AlertDescription className="text-xs text-muted-foreground">
+                New users must register themselves via the login page. Once registered, their role can be changed below. First user is automatically assigned <strong>admin</strong>; subsequent users default to <strong>viewer</strong>.
+              </AlertDescription>
+            </Alert>
             <Table>
               <TableHeader>
                 <TableRow className="border-border hover:bg-transparent">
