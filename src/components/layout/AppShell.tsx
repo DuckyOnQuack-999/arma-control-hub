@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { NavLink } from '@/components/NavLink';
 import { useAuthStore } from '@/stores/authStore';
+import { getServers, getRecentEventCount } from '@/lib/supabaseApi';
 import {
-  LayoutDashboard, Globe, Settings, Terminal, LogOut, Menu, X, ChevronDown, Bell,
+  LayoutDashboard, Globe, Settings, Terminal, LogOut, Menu, X, ChevronDown, Bell, Server,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,6 +22,18 @@ export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
+
+  const { data: servers = [] } = useQuery({
+    queryKey: ['servers'],
+    queryFn: getServers,
+    staleTime: 30_000,
+  });
+
+  const { data: eventCount = 0 } = useQuery({
+    queryKey: ['recent-event-count'],
+    queryFn: () => getRecentEventCount(1),
+    refetchInterval: 60_000,
+  });
 
   const handleLogout = async () => {
     await logout();
