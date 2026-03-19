@@ -18,15 +18,7 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
   isLoading: true,
 
   initialize: async () => {
-    // Safety timeout — force loading to resolve after 5s
-    const timeout = setTimeout(() => {
-      if (get().isLoading) {
-        set({ isLoading: false });
-      }
-    }, 5000);
-
-    supabase.auth.onAuthStateChange(async (event, session) => {
-      clearTimeout(timeout);
+    const resolveSession = async (session: any) => {
       if (session?.user) {
         let role: UserRole = 'viewer';
         try {
@@ -41,7 +33,16 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       } else {
         set({ user: null, isAuthenticated: false, isLoading: false });
       }
+    };
+
+    // Set up listener FIRST for subsequent changes
+    supabase.auth.onAuthStateChange(async (_event, session) => {
+      await resolveSession(session);
     });
+
+    // Then resolve initial state immediately
+    const { data: { session } } = await supabase.auth.getSession();
+    await resolveSession(session);
   },
 
   login: async (email, password) => {
