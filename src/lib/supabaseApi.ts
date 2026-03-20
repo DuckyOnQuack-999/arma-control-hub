@@ -315,3 +315,20 @@ export async function changePassword(newPassword: string): Promise<void> {
   const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) throw error;
 }
+
+// ─── Server Status (via Agent) ─────────────────────────────
+
+export async function pollServerStatus(serverId: number): Promise<any> {
+  const { data, error } = await supabase.functions.invoke('server-status', {
+    body: { serverId },
+  });
+  if (error) throw error;
+  return data;
+}
+
+// ─── Binary Downloads ─────────────────────────────────────
+
+export function getBinaryDownloadUrl(filename: string): string {
+  const { data } = supabase.storage.from('binaries').getPublicUrl(filename);
+  return data.publicUrl;
+}
