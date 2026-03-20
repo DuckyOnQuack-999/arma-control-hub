@@ -53,114 +53,20 @@ Deno.serve(async (req) => {
 
     // Verify server exists
     const { data: server, error: serverErr } = await supabase
-      .from('servers').select('id, name, status, executable_path, config_dir, data_dir, port').eq('id', serverId).maybeSingle();
+      .from('servers').select('id, name, status, executable_path, config_dir, data_dir, port, agent_url').eq('id', serverId).maybeSingle();
     if (serverErr || !server) {
       return new Response(JSON.stringify({ error: 'Server not found' }), {
         status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    let newStatus: string | null = null;
-    let eventType = action;
-    let payload: Record<string, unknown> = { source: 'panel', user_id: user.id, user_email: user.email };
-
-    switch (action) {
-      case 'start':
-        if (server.status !== 'offline' && server.status !== 'crashed') {
-          return new Response(JSON.stringify({ error: `Cannot start: server is ${server.status}` }), {
-            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-        // Transition: offline/crashed → starting → online
-        await supabase.from('servers').update({ status: 'starting' }).eq('id', serverId);
-        // In production, an agent on the host machine would pick up the 'starting' status
-        // and launch the actual armagetronad-dedicated process. For now we simulate:
-        await supabase.from('servers').update({ status: 'online', uptime: 0 }).eq('id', serverId);
-        newStatus = 'online';
-        payload.executable = server.executable_path;
-        payload.config_dir = server.config_dir;
-        payload.data_dir = server.data_dir;
-        payload.port = server.port;
-        break;
-
-      case 'stop':
-        if (server.status !== 'online') {
-          return new Response(JSON.stringify({ error: `Cannot stop: server is ${server.status}` }), {
-            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-        await supabase.from('servers').update({ status: 'stopping' }).eq('id', serverId);
-        // Graceful stop: mark players offline, then set offline
-        await supabase.from('players').update({ is_online: false }).eq('server_id', serverId);
-        await supabase.from('servers').update({ status: 'offline', player_count: 0, cpu_percent: 0, memory_mb: 0 }).eq('id', serverId);
-        newStatus = 'offline';
-        break;
-
-      case 'restart':
-        if (server.status !== 'online') {
-          return new Response(JSON.stringify({ error: `Cannot restart: server is ${server.status}` }), {
-            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-        await supabase.from('servers').update({ status: 'stopping' }).eq('id', serverId);
-        await supabase.from('players').update({ is_online: false }).eq('server_id', serverId);
-        await supabase.from('servers').update({ status: 'starting' }).eq('id', serverId);
-        await supabase.from('servers').update({ status: 'online', uptime: 0, player_count: 0 }).eq('id', serverId);
-        newStatus = 'online';
-        break;
-
-      case 'kill':
-        await supabase.from('players').update({ is_online: false }).eq('server_id', serverId);
-        await supabase.from('servers').update({ status: 'offline', player_count: 0, cpu_percent: 0, memory_mb: 0 }).eq('id', serverId);
-        newStatus = 'offline';
-        payload.forced = true;
-        break;
-
-      case 'command':
-        if (!command) {
-          return new Response(JSON.stringify({ error: 'command field required for action=command' }), {
-            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-        if (server.status !== 'online') {
-          return new Response(JSON.stringify({ error: `Cannot send command: server is ${server.status}` }), {
-            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-        eventType = 'command';
-        payload.command = command;
-        // In production, the agent would pipe this to the server's stdin
-        break;
-
-      default:
-        return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
-          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+    // If agent_url is configured, proxy the action to the host agent
+    if (server.agent_url) {
+      return await proxyToAgent(server, action, command, user, supabase, corsHeaders);
     }
 
-    // Log the event
-    await supabase.from('server_events').insert({
-      server_id: serverId,
-      event_type: eventType,
-      payload,
-    });
-
-    // Log to audit trail
-    await supabase.from('audit_log').insert({
-      user_id: user.id,
-      action: `server.${action}`,
-      target_type: 'server',
-      target_id: String(serverId),
-      details: payload,
-    });
-
-    return new Response(JSON.stringify({
-      success: true,
-      message: `Action '${action}' executed on server ${server.name}`,
-      newStatus: newStatus || server.status,
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    // Otherwise, simulate (no agent configured)
+    return await simulateAction(server, action, command, user, supabase, corsHeaders);
 
   } catch (error) {
     console.error('Server control error:', error);
@@ -169,3 +75,158 @@ Deno.serve(async (req) => {
     });
   }
 });
+
+async function proxyToAgent(
+  server: any, action: string, command: string | undefined,
+  user: any, supabase: any, cors: Record<string, string>
+) {
+  const agentUrl = server.agent_url.replace(/\/$/, '');
+  const payload: Record<string, unknown> = { action, serverId: server.id };
+  if (command) payload.command = command;
+
+  try {
+    const agentResp = await fetch(`${agentUrl}/control`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    const agentData = await agentResp.json();
+
+    // Update server status in DB if agent reports new status
+    if (agentData.status) {
+      await supabase.from('servers').update({ status: agentData.status }).eq('id', server.id);
+    }
+
+    // Log the event
+    await supabase.from('server_events').insert({
+      server_id: server.id,
+      event_type: action,
+      payload: { source: 'agent', user_id: user.id, user_email: user.email, agent_response: agentData },
+    });
+
+    await supabase.from('audit_log').insert({
+      user_id: user.id,
+      action: `server.${action}`,
+      target_type: 'server',
+      target_id: String(server.id),
+      details: { source: 'agent', command },
+    });
+
+    return new Response(JSON.stringify({
+      success: agentResp.ok,
+      message: agentData.message || `Action '${action}' sent to agent for ${server.name}`,
+      newStatus: agentData.status || server.status,
+    }), {
+      headers: { ...cors, 'Content-Type': 'application/json' },
+    });
+  } catch (fetchErr) {
+    console.error('Agent proxy error:', fetchErr);
+    return new Response(JSON.stringify({
+      error: `Agent unreachable at ${agentUrl}: ${fetchErr instanceof Error ? fetchErr.message : 'timeout'}`,
+    }), {
+      status: 502, headers: { ...cors, 'Content-Type': 'application/json' },
+    });
+  }
+}
+
+async function simulateAction(
+  server: any, action: string, command: string | undefined,
+  user: any, supabase: any, cors: Record<string, string>
+) {
+  let newStatus: string | null = null;
+  let eventType = action;
+  const payload: Record<string, unknown> = { source: 'panel_simulated', user_id: user.id, user_email: user.email };
+
+  switch (action) {
+    case 'start':
+      if (server.status !== 'offline' && server.status !== 'crashed') {
+        return new Response(JSON.stringify({ error: `Cannot start: server is ${server.status}` }), {
+          status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
+        });
+      }
+      await supabase.from('servers').update({ status: 'starting' }).eq('id', server.id);
+      await supabase.from('servers').update({ status: 'online', uptime: 0 }).eq('id', server.id);
+      newStatus = 'online';
+      payload.executable = server.executable_path;
+      payload.config_dir = server.config_dir;
+      payload.data_dir = server.data_dir;
+      payload.port = server.port;
+      break;
+
+    case 'stop':
+      if (server.status !== 'online') {
+        return new Response(JSON.stringify({ error: `Cannot stop: server is ${server.status}` }), {
+          status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
+        });
+      }
+      await supabase.from('servers').update({ status: 'stopping' }).eq('id', server.id);
+      await supabase.from('players').update({ is_online: false }).eq('server_id', server.id);
+      await supabase.from('servers').update({ status: 'offline', player_count: 0, cpu_percent: 0, memory_mb: 0 }).eq('id', server.id);
+      newStatus = 'offline';
+      break;
+
+    case 'restart':
+      if (server.status !== 'online') {
+        return new Response(JSON.stringify({ error: `Cannot restart: server is ${server.status}` }), {
+          status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
+        });
+      }
+      await supabase.from('servers').update({ status: 'stopping' }).eq('id', server.id);
+      await supabase.from('players').update({ is_online: false }).eq('server_id', server.id);
+      await supabase.from('servers').update({ status: 'starting' }).eq('id', server.id);
+      await supabase.from('servers').update({ status: 'online', uptime: 0, player_count: 0 }).eq('id', server.id);
+      newStatus = 'online';
+      break;
+
+    case 'kill':
+      await supabase.from('players').update({ is_online: false }).eq('server_id', server.id);
+      await supabase.from('servers').update({ status: 'offline', player_count: 0, cpu_percent: 0, memory_mb: 0 }).eq('id', server.id);
+      newStatus = 'offline';
+      payload.forced = true;
+      break;
+
+    case 'command':
+      if (!command) {
+        return new Response(JSON.stringify({ error: 'command field required for action=command' }), {
+          status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
+        });
+      }
+      if (server.status !== 'online') {
+        return new Response(JSON.stringify({ error: `Cannot send command: server is ${server.status}` }), {
+          status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
+        });
+      }
+      eventType = 'command';
+      payload.command = command;
+      break;
+
+    default:
+      return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
+        status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
+      });
+  }
+
+  await supabase.from('server_events').insert({
+    server_id: server.id,
+    event_type: eventType,
+    payload,
+  });
+
+  await supabase.from('audit_log').insert({
+    user_id: user.id,
+    action: `server.${action}`,
+    target_type: 'server',
+    target_id: String(server.id),
+    details: payload,
+  });
+
+  return new Response(JSON.stringify({
+    success: true,
+    message: `Action '${action}' simulated on server ${server.name} (no agent configured)`,
+    newStatus: newStatus || server.status,
+  }), {
+    headers: { ...cors, 'Content-Type': 'application/json' },
+  });
+}

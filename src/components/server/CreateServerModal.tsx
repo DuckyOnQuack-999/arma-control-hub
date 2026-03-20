@@ -22,6 +22,7 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
     port: 4537,
     max_players: 16,
     auto_restart: true,
+    agent_url: '',
   });
   const [loading, setLoading] = useState(false);
 
