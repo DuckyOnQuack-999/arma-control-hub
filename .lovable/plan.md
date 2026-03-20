@@ -1,71 +1,65 @@
 
 
-# RetroCycles Panel — Gap Analysis & Enhancement Plan
+# Fix Login Hang + Integrate Dedicated Server
 
-The current codebase is already well-built with the cyberpunk theme, mock API, all major pages, and core functionality. Here's what needs improvement to match the full spec:
+## Status of Requested Checks
 
-## Missing Features
+- **Notification bell badge**: Already implemented with real-time event count and red badge
+- **Server switcher dropdown**: Already implemented with status indicators
+- **Settings user management note**: Already implemented with info alert for admins
+- **Real-time dashboard**: Already implemented via Supabase Realtime subscription on `servers` table
 
-### 1. Error Boundary Component
-- Create `src/components/shared/ErrorBoundary.tsx` — React error boundary with retry button
-- Wrap main app content with it
+These features are all working. The two items requiring changes are below.
 
-### 2. Maps Tab (missing entirely)
-- Create `src/components/tabs/MapsTab.tsx` — list, upload, delete map/resource files
-- Add Maps tab to ServerDetailPage
+---
 
-### 3. Login Page — Registration Mode
-- The spec says first-run (no users) should show registration form
-- Current login page only has login; add a toggle for registration mode
+## 1. Fix Login/Register Page Hang
 
-### 4. Settings Page Enhancements
-- Add ability to change user roles (admin only)
-- Add delete user action
-- Add "Add User" form for admin
-- Add app settings section (theme toggle, notification preferences)
+**Root cause**: The `LoginPage` component calls `navigate('/dashboard')` during render (lines 21-24) when `isAuthenticated` is true. This is invalid in React — navigation side effects during render cause the component to silently break. Additionally, after successful login, the auth state change listener fires and re-renders the component while the `handleSubmit` async function is still in its `finally` block, causing a race condition.
 
-### 5. Console Tab — Missing Features
-- Command suggestions for known Armagetron commands (autocomplete dropdown)
-- Reconnect button when disconnected
-- Toggle for connect/disconnect simulation
+**Fix** (in `src/pages/LoginPage.tsx`):
+- Replace the render-time `navigate()` call with a `useEffect` that watches `isAuthenticated`
+- Remove the `navigate('/dashboard')` from `handleSubmit` (the `useEffect` handles it)
+- Remove `forwardRef` wrapper (unnecessary, causes console warnings)
 
-### 6. Server Browser — Missing "Query/Inspect" Action
-- Add an "Inspect" button per server row that opens a modal with detailed server info
+**Fix** (in `src/App.tsx`):
+- Wrap `ProtectedRoute` with `forwardRef` to eliminate the remaining ref warning from React Router
 
-### 7. Logs Tab — Missing Features  
-- Date range picker filter
-- Toggle to raw file view with tail mode
-- Infinite scroll / load more pagination
+## 2. Integrate Dedicated Server Binaries
 
-### 8. Config Tab — Raw Editor File Switching
-- Currently raw editor doesn't reload content when switching files; fix to fetch per-file content
+The uploaded files (`armagetronad-dedicated` and `armagetronad-serverquery`) are native Linux binaries. They cannot run inside edge functions or the browser. The architecture requires a **host agent** pattern:
 
-## UI/UX Polish
+**Architecture**:
+```text
+Browser ──► Edge Function ──► Agent API (on game server host)
+                                  │
+                                  ├── armagetronad-dedicated (process mgmt)
+                                  └── armagetronad-serverquery (status polling)
+```
 
-### 9. Page Transitions
-- Add CSS transitions on route changes for smooth navigation feel
+**What we'll build**:
 
-### 10. Sidebar Active State Enhancement
-- Add animated glow indicator on active nav item
+1. **Store binaries in file storage** — Upload both binaries to a `binaries` storage bucket so admins can download them to their host machines
 
-### 11. Server Card — Current Map Display Fix
-- Offline servers show empty map string; should show "N/A" or hide
+2. **Add `agent_url` column to `servers` table** — Each server record gets an optional `agent_url` field pointing to the host agent's HTTP endpoint (e.g., `http://192.168.1.10:8080`)
 
-### 12. TopBar Enhancement
-- Add notification bell icon (mock unread count)
-- Add server selector dropdown in the top bar
+3. **Update `server-control` edge function** — When `agent_url` is set on a server, proxy start/stop/restart/kill/command actions to the agent instead of simulating. Fall back to simulation when no agent is configured.
 
-## Implementation Steps
+4. **Create `server-status` edge function** — New function that calls `armagetronad-serverquery` via the agent to get live server status (players, ping, map), updating the `servers` table with real data.
 
-1. **Create ErrorBoundary** — standard React class component with fallback UI
-2. **Create MapsTab** — mock data for maps, list with delete/upload UI, add to ServerDetailPage tabs
-3. **Enhance LoginPage** — add registration mode toggle, wire to `api.register()`
-4. **Enhance SettingsPage** — add user CRUD actions, add app settings section with theme toggle
-5. **Enhance ConsoleTab** — add command autocomplete suggestions, reconnect button
-6. **Enhance ServerBrowserPage** — add inspect modal per server
-7. **Enhance LogsTab** — add date range filter, raw file toggle, load-more pagination
-8. **Fix ConfigTab** — raw editor file switching loads correct content
-9. **Add MapsTab mock data** — add map file list to mockData and mockApi
-10. **TopBar notification bell** — add to AppShell header
-11. **Minor UI polish** — page transitions, server card offline state, glow effects
+5. **Add agent setup instructions** — Add a section to the Settings page or server detail page with download links for the binaries and instructions for setting up the agent on a host machine.
+
+**Database migration**: Add `agent_url` column to `servers` table:
+```sql
+ALTER TABLE public.servers ADD COLUMN agent_url text DEFAULT '';
+```
+
+**Files changed**:
+- `src/pages/LoginPage.tsx` — Fix hang with useEffect navigation
+- `src/App.tsx` — Fix ref warning on ProtectedRoute
+- `supabase/functions/server-control/index.ts` — Add agent proxy logic
+- `supabase/functions/server-status/index.ts` — New function for live status polling
+- `src/lib/supabaseApi.ts` — Add agent-related API calls
+- `src/components/server/CreateServerModal.tsx` — Add agent_url field
+- `src/pages/SettingsPage.tsx` — Add agent setup documentation section
 
