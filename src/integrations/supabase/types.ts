@@ -286,6 +286,7 @@ export type Database = {
       }
       servers: {
         Row: {
+          agent_url: string | null
           auto_restart: boolean
           config_dir: string
           cpu_percent: number
@@ -304,6 +305,7 @@ export type Database = {
           uptime: number
         }
         Insert: {
+          agent_url?: string | null
           auto_restart?: boolean
           config_dir?: string
           cpu_percent?: number
@@ -322,6 +324,7 @@ export type Database = {
           uptime?: number
         }
         Update: {
+          agent_url?: string | null
           auto_restart?: boolean
           config_dir?: string
           cpu_percent?: number

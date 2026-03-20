@@ -22,6 +22,7 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
     port: 4537,
     max_players: 16,
     auto_restart: true,
+    agent_url: '',
   });
   const [loading, setLoading] = useState(false);
 
@@ -36,7 +37,7 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
       toast({ title: 'Server created', description: `${form.name} has been added` });
       onCreated();
       onClose();
-      setForm({ name: '', executable_path: '/usr/bin/armagetronad-dedicated', data_dir: '/usr/share/armagetronad', config_dir: '/etc/armagetronad/new', port: 4537, max_players: 16, auto_restart: true });
+      setForm({ name: '', executable_path: '/usr/bin/armagetronad-dedicated', data_dir: '/usr/share/armagetronad', config_dir: '/etc/armagetronad/new', port: 4537, max_players: 16, auto_restart: true, agent_url: '' });
     } catch (err: any) {
       toast({ title: 'Failed to create server', description: err?.message, variant: 'destructive' });
     } finally {
@@ -82,6 +83,11 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
           <div className="flex items-center gap-2">
             <Switch checked={form.auto_restart} onCheckedChange={v => setForm(f => ({ ...f, auto_restart: v }))} />
             <Label>Auto-restart on crash</Label>
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Agent URL <span className="text-xs text-muted-foreground">(optional)</span></Label>
+            <Input value={form.agent_url} onChange={e => setForm(f => ({ ...f, agent_url: e.target.value }))} placeholder="http://192.168.1.10:8080" className="font-mono text-xs" />
+            <p className="text-[10px] text-muted-foreground">HTTP endpoint of the host agent managing this server. Leave empty for simulation mode.</p>
           </div>
         </div>
         <DialogFooter>
