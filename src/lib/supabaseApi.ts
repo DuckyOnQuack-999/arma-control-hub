@@ -16,7 +16,7 @@ export async function getServer(id: number): Promise<Server | null> {
   return data;
 }
 
-export async function createServer(data: Partial<Server>): Promise<Server> {
+export async function createServer(data: Partial<Server> & { agent_url?: string }): Promise<Server> {
   const { data: server, error } = await supabase.from('servers').insert({
     name: data.name || 'New Server',
     executable_path: data.executable_path || '/usr/bin/armagetronad-dedicated',
@@ -25,6 +25,7 @@ export async function createServer(data: Partial<Server>): Promise<Server> {
     port: data.port || 4537,
     auto_restart: data.auto_restart ?? true,
     max_players: data.max_players || 16,
+    agent_url: data.agent_url || '',
   }).select().single();
   if (error) throw error;
   return server;
