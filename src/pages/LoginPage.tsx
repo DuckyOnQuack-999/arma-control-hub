@@ -1,4 +1,4 @@
-import { useState, forwardRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Terminal } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
-const LoginPage = forwardRef<HTMLDivElement>((_, ref) => {
+const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -17,11 +17,12 @@ const LoginPage = forwardRef<HTMLDivElement>((_, ref) => {
   const { login, register, isAuthenticated } = useAuthStore();
   const navigate = useNavigate();
 
-  // Redirect if already authenticated
-  if (isAuthenticated) {
-    navigate('/dashboard', { replace: true });
-    return null;
-  }
+  // Redirect via useEffect instead of during render
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,7 +43,7 @@ const LoginPage = forwardRef<HTMLDivElement>((_, ref) => {
       } else {
         await login(email, password);
       }
-      navigate('/dashboard');
+      // Navigation handled by useEffect watching isAuthenticated
     } catch (err: any) {
       toast({ title: isRegister ? 'Registration failed' : 'Login failed', description: err?.message || 'Invalid credentials', variant: 'destructive' });
     } finally {
@@ -51,7 +52,7 @@ const LoginPage = forwardRef<HTMLDivElement>((_, ref) => {
   };
 
   return (
-    <div ref={ref} className="flex min-h-screen items-center justify-center bg-background cyber-grid p-4">
+    <div className="flex min-h-screen items-center justify-center bg-background cyber-grid p-4">
       <div className="fixed inset-0 scanline" />
       <Card className="relative z-10 w-full max-w-md border-primary/30 bg-card glow-cyan">
         <CardHeader className="text-center">
@@ -128,8 +129,6 @@ const LoginPage = forwardRef<HTMLDivElement>((_, ref) => {
       </Card>
     </div>
   );
-});
-
-LoginPage.displayName = 'LoginPage';
+};
 
 export default LoginPage;
