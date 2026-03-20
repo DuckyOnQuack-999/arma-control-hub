@@ -84,6 +84,11 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
             <Switch checked={form.auto_restart} onCheckedChange={v => setForm(f => ({ ...f, auto_restart: v }))} />
             <Label>Auto-restart on crash</Label>
           </div>
+          <div className="grid gap-1.5">
+            <Label>Agent URL <span className="text-xs text-muted-foreground">(optional)</span></Label>
+            <Input value={form.agent_url} onChange={e => setForm(f => ({ ...f, agent_url: e.target.value }))} placeholder="http://192.168.1.10:8080" className="font-mono text-xs" />
+            <p className="text-[10px] text-muted-foreground">HTTP endpoint of the host agent managing this server. Leave empty for simulation mode.</p>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
