@@ -19,7 +19,7 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
     executable_path: '/usr/bin/armagetronad-dedicated',
     data_dir: '/usr/share/armagetronad',
     config_dir: '/etc/armagetronad/new',
-    port: 4537,
+    port: 4534,
     max_players: 16,
     auto_restart: true,
     agent_url: '',
@@ -37,7 +37,7 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
       toast({ title: 'Server created', description: `${form.name} has been added` });
       onCreated();
       onClose();
-      setForm({ name: '', executable_path: '/usr/bin/armagetronad-dedicated', data_dir: '/usr/share/armagetronad', config_dir: '/etc/armagetronad/new', port: 4537, max_players: 16, auto_restart: true, agent_url: '' });
+      setForm({ name: '', executable_path: '/usr/bin/armagetronad-dedicated', data_dir: '/usr/share/armagetronad', config_dir: '/etc/armagetronad/new', port: 4534, max_players: 16, auto_restart: true, agent_url: '' });
     } catch (err: any) {
       toast({ title: 'Failed to create server', description: err?.message, variant: 'destructive' });
     } finally {

@@ -1,12 +1,12 @@
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { getServer, serverAction } from '@/lib/supabaseApi';
+import { getServer, serverAction, pollServerStatus } from '@/lib/supabaseApi';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ServerStatusBadge } from '@/components/server/ServerStatusBadge';
 import { ServerControlBar } from '@/components/server/ServerControlBar';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { toast } from '@/hooks/use-toast';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import ConsoleTab from '@/components/tabs/ConsoleTab';
 import PlayersTab from '@/components/tabs/PlayersTab';
@@ -15,7 +15,7 @@ import MetricsTab from '@/components/tabs/MetricsTab';
 import ConfigTab from '@/components/tabs/ConfigTab';
 import OverviewTab from '@/components/tabs/OverviewTab';
 import MapsTab from '@/components/tabs/MapsTab';
-import { Users, Cpu, HardDrive, Clock } from 'lucide-react';
+import { Users, Cpu, HardDrive, Clock, Wifi, Monitor } from 'lucide-react';
 import type { ServerStatus } from '@/data/types';
 
 const ServerDetailPage = () => {
@@ -37,6 +37,18 @@ const ServerDetailPage = () => {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [serverId, refetch]);
+
+  // Poll agent for live status every 15s when agent_url is configured
+  useEffect(() => {
+    if (!server?.agent_url) return;
+    const interval = setInterval(async () => {
+      try {
+        await pollServerStatus(serverId);
+        refetch();
+      } catch {}
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [serverId, server?.agent_url, refetch]);
 
   if (isLoading || !server) return <LoadingSpinner />;
 
@@ -64,6 +76,11 @@ const ServerDetailPage = () => {
         <div className="flex items-center gap-3">
           <h1 className="font-display text-xl font-bold tracking-wide">{server.name}</h1>
           <ServerStatusBadge status={server.status as ServerStatus} />
+          {server.agent_url ? (
+            <span className="flex items-center gap-1 text-[10px] text-neon-green"><Wifi className="h-3 w-3" /> Agent</span>
+          ) : (
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><Monitor className="h-3 w-3" /> Simulation</span>
+          )}
         </div>
         <ServerControlBar
           status={server.status as ServerStatus}

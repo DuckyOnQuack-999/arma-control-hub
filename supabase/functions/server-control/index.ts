@@ -9,15 +9,8 @@ function validateAgentUrl(url: string): boolean {
   try {
     const u = new URL(url);
     if (!['http:', 'https:'].includes(u.protocol)) return false;
-    const hostname = u.hostname;
-    // Block private/link-local IPs
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return false;
-    if (hostname.startsWith('10.')) return false;
-    if (hostname.startsWith('192.168.')) return false;
-    if (hostname.startsWith('169.254.')) return false;
-    if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return false;
-    // Block metadata endpoints
-    if (hostname === '169.254.169.254') return false;
+    // Block only cloud metadata endpoint — private IPs are expected for game servers
+    if (u.hostname === '169.254.169.254') return false;
     return true;
   } catch {
     return false;
