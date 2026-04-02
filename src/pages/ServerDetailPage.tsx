@@ -1,12 +1,12 @@
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { getServer, serverAction } from '@/lib/supabaseApi';
+import { getServer, serverAction, pollServerStatus } from '@/lib/supabaseApi';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ServerStatusBadge } from '@/components/server/ServerStatusBadge';
 import { ServerControlBar } from '@/components/server/ServerControlBar';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { toast } from '@/hooks/use-toast';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import ConsoleTab from '@/components/tabs/ConsoleTab';
 import PlayersTab from '@/components/tabs/PlayersTab';
@@ -15,7 +15,7 @@ import MetricsTab from '@/components/tabs/MetricsTab';
 import ConfigTab from '@/components/tabs/ConfigTab';
 import OverviewTab from '@/components/tabs/OverviewTab';
 import MapsTab from '@/components/tabs/MapsTab';
-import { Users, Cpu, HardDrive, Clock } from 'lucide-react';
+import { Users, Cpu, HardDrive, Clock, Wifi, Monitor } from 'lucide-react';
 import type { ServerStatus } from '@/data/types';
 
 const ServerDetailPage = () => {
