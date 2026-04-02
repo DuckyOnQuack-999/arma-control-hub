@@ -19,7 +19,7 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
     executable_path: '/usr/bin/armagetronad-dedicated',
     data_dir: '/usr/share/armagetronad',
     config_dir: '/etc/armagetronad/new',
-    port: 4537,
+    port: 4534,
     max_players: 16,
     auto_restart: true,
     agent_url: '',
