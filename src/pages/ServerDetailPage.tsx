@@ -76,6 +76,11 @@ const ServerDetailPage = () => {
         <div className="flex items-center gap-3">
           <h1 className="font-display text-xl font-bold tracking-wide">{server.name}</h1>
           <ServerStatusBadge status={server.status as ServerStatus} />
+          {server.agent_url ? (
+            <span className="flex items-center gap-1 text-[10px] text-neon-green"><Wifi className="h-3 w-3" /> Agent</span>
+          ) : (
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><Monitor className="h-3 w-3" /> Simulation</span>
+          )}
         </div>
         <ServerControlBar
           status={server.status as ServerStatus}
