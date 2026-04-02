@@ -36,7 +36,10 @@ export function ServerCard({ server }: { server: Server }) {
         <div className="flex items-start justify-between mb-3">
           <div>
             <h3 className="font-display text-sm font-semibold text-foreground tracking-wide">{server.name}</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Port {server.port}</p>
+            <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
+              Port {server.port}
+              {server.agent_url ? <Wifi className="h-3 w-3 text-neon-green" /> : <Monitor className="h-3 w-3 text-muted-foreground" />}
+            </p>
           </div>
           <ServerStatusBadge status={server.status as ServerStatus} />
         </div>
