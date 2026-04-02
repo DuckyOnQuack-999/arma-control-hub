@@ -38,6 +38,18 @@ const ServerDetailPage = () => {
     return () => { supabase.removeChannel(channel); };
   }, [serverId, refetch]);
 
+  // Poll agent for live status every 15s when agent_url is configured
+  useEffect(() => {
+    if (!server?.agent_url) return;
+    const interval = setInterval(async () => {
+      try {
+        await pollServerStatus(serverId);
+        refetch();
+      } catch {}
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [serverId, server?.agent_url, refetch]);
+
   if (isLoading || !server) return <LoadingSpinner />;
 
   const handleAction = async (action: 'start' | 'stop' | 'restart' | 'kill') => {
