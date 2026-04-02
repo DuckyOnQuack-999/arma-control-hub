@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { ServerStatusBadge } from './ServerStatusBadge';
 import { Progress } from '@/components/ui/progress';
-import { Play, Square, RotateCcw, Users, Cpu, HardDrive } from 'lucide-react';
+import { Play, Square, RotateCcw, Users, Cpu, HardDrive, Wifi, Monitor } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Server, ServerStatus } from '@/data/types';
 import { serverAction } from '@/lib/supabaseApi';
