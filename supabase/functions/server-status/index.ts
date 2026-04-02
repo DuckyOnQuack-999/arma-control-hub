@@ -5,6 +5,22 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
+function validateAgentUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (!['http:', 'https:'].includes(u.protocol)) return false;
+    const hostname = u.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return false;
+    if (hostname.startsWith('10.')) return false;
+    if (hostname.startsWith('192.168.')) return false;
+    if (hostname.startsWith('169.254.')) return false;
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -22,7 +38,6 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Verify user
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -60,7 +75,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Query the agent for live status
+    if (!validateAgentUrl(server.agent_url)) {
+      return new Response(JSON.stringify({ error: 'Invalid agent URL configuration' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const agentUrl = server.agent_url.replace(/\/$/, '');
     try {
       const agentResp = await fetch(`${agentUrl}/status`, {
@@ -72,7 +92,6 @@ Deno.serve(async (req) => {
 
       const agentData = await agentResp.json();
 
-      // Update the servers table with live data
       const updates: Record<string, unknown> = {};
       if (agentData.status) updates.status = agentData.status;
       if (typeof agentData.player_count === 'number') updates.player_count = agentData.player_count;
@@ -85,7 +104,6 @@ Deno.serve(async (req) => {
         await supabase.from('servers').update(updates).eq('id', server.id);
       }
 
-      // Insert metrics snapshot
       if (typeof agentData.cpu_percent === 'number') {
         await supabase.from('metrics').insert({
           server_id: server.id,
@@ -102,8 +120,9 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     } catch (fetchErr) {
+      console.error('Agent fetch error:', fetchErr);
       return new Response(JSON.stringify({
-        error: `Agent unreachable: ${fetchErr instanceof Error ? fetchErr.message : 'timeout'}`,
+        error: 'Agent unreachable: connection failed',
         status: server.status,
       }), {
         status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -111,7 +130,7 @@ Deno.serve(async (req) => {
     }
   } catch (error) {
     console.error('Server status error:', error);
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Internal error' }), {
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
