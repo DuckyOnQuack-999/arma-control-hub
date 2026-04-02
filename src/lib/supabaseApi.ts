@@ -67,7 +67,8 @@ export async function kickPlayer(serverId: number, playerName: string): Promise<
     .eq('server_id', serverId).eq('name', playerName);
   if (error) throw error;
   // Also send kick command via edge function
-  await serverAction(serverId, 'command', `KICK ${playerName}`);
+  const safeName = playerName.replace(/[\r\n\0]/g, '').slice(0, 200);
+  await serverAction(serverId, 'command', `KICK ${safeName}`);
 }
 
 // ─── Bans ─────────────────────────────────────────────
