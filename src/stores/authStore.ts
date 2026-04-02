@@ -36,8 +36,8 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
     };
 
     // Set up listener FIRST for subsequent changes
-    supabase.auth.onAuthStateChange(async (_event, session) => {
-      await resolveSession(session);
+    supabase.auth.onAuthStateChange((_event, session) => {
+      resolveSession(session);
     });
 
     // Then resolve initial state immediately
