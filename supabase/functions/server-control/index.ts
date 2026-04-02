@@ -5,6 +5,29 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
+function validateAgentUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (!['http:', 'https:'].includes(u.protocol)) return false;
+    const hostname = u.hostname;
+    // Block private/link-local IPs
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return false;
+    if (hostname.startsWith('10.')) return false;
+    if (hostname.startsWith('192.168.')) return false;
+    if (hostname.startsWith('169.254.')) return false;
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return false;
+    // Block metadata endpoints
+    if (hostname === '169.254.169.254') return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeCommand(cmd: string): string {
+  return cmd.replace(/[\r\n\0]/g, '').slice(0, 500);
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -22,7 +45,6 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Verify user from JWT
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -34,7 +56,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Check role (admin or moderator)
     const { data: hasAdmin } = await supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' });
     const { data: hasMod } = await supabase.rpc('has_role', { _user_id: user.id, _role: 'moderator' });
     if (!hasAdmin && !hasMod) {
@@ -43,7 +64,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { serverId, action, command } = await req.json();
+    const body = await req.json();
+    const serverId = body.serverId;
+    const action = body.action;
+    const command = body.command ? sanitizeCommand(body.command) : undefined;
 
     if (!serverId || !action) {
       return new Response(JSON.stringify({ error: 'serverId and action required' }), {
@@ -51,7 +75,13 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Verify server exists
+    const validActions = ['start', 'stop', 'restart', 'kill', 'command'];
+    if (!validActions.includes(action)) {
+      return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const { data: server, error: serverErr } = await supabase
       .from('servers').select('id, name, status, executable_path, config_dir, data_dir, port, agent_url').eq('id', serverId).maybeSingle();
     if (serverErr || !server) {
@@ -60,17 +90,20 @@ Deno.serve(async (req) => {
       });
     }
 
-    // If agent_url is configured, proxy the action to the host agent
     if (server.agent_url) {
+      if (!validateAgentUrl(server.agent_url)) {
+        return new Response(JSON.stringify({ error: 'Invalid agent URL configuration' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
       return await proxyToAgent(server, action, command, user, supabase, corsHeaders);
     }
 
-    // Otherwise, simulate (no agent configured)
     return await simulateAction(server, action, command, user, supabase, corsHeaders);
 
   } catch (error) {
     console.error('Server control error:', error);
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Internal error' }), {
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
@@ -94,12 +127,10 @@ async function proxyToAgent(
 
     const agentData = await agentResp.json();
 
-    // Update server status in DB if agent reports new status
     if (agentData.status) {
       await supabase.from('servers').update({ status: agentData.status }).eq('id', server.id);
     }
 
-    // Log the event
     await supabase.from('server_events').insert({
       server_id: server.id,
       event_type: action,
@@ -124,7 +155,7 @@ async function proxyToAgent(
   } catch (fetchErr) {
     console.error('Agent proxy error:', fetchErr);
     return new Response(JSON.stringify({
-      error: `Agent unreachable at ${agentUrl}: ${fetchErr instanceof Error ? fetchErr.message : 'timeout'}`,
+      error: 'Agent unreachable: connection failed',
     }), {
       status: 502, headers: { ...cors, 'Content-Type': 'application/json' },
     });

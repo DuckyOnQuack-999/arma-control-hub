@@ -95,7 +95,8 @@ export async function banPlayer(serverId: number, playerName: string, reason: st
 
   // Also mark player offline and send ban command
   await supabase.from('players').update({ is_online: false }).eq('server_id', serverId).eq('name', playerName);
-  await serverAction(serverId, 'command', `BAN ${playerName}`);
+  const safeName = playerName.replace(/[\r\n\0]/g, '').slice(0, 200);
+  await serverAction(serverId, 'command', `BAN ${safeName}`);
 }
 
 export async function unban(banId: number): Promise<void> {
