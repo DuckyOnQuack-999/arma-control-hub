@@ -22,7 +22,7 @@ export async function createServer(data: Partial<Server> & { agent_url?: string 
     executable_path: data.executable_path || '/usr/bin/armagetronad-dedicated',
     data_dir: data.data_dir || '/usr/share/armagetronad',
     config_dir: data.config_dir || '/etc/armagetronad/new',
-    port: data.port || 4537,
+    port: data.port || 4534,
     auto_restart: data.auto_restart ?? true,
     max_players: data.max_players || 16,
     agent_url: data.agent_url || '',
