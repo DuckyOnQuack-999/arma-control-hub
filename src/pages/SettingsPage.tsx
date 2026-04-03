@@ -196,6 +196,9 @@ const SettingsPage = () => {
                 Set the <strong>Agent URL</strong> when creating/editing a server (e.g. <code className="text-primary">http://192.168.1.10:8080</code>). The panel proxies all actions to the agent instead of simulating.
               </p>
             </div>
+            <Button variant="outline" size="sm" className="text-xs" onClick={() => navigate('/agent-wizard')}>
+              <ExternalLink className="h-3 w-3 mr-1" /> Open Agent Setup Wizard
+            </Button>
             <div className="space-y-2">
               <Label className="text-xs font-display">Agent API Spec</Label>
               <div className="rounded-md bg-muted p-3 font-mono text-[11px] text-muted-foreground space-y-1">

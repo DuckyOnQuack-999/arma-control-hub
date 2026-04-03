@@ -53,15 +53,20 @@ export default function OverviewTab({ server }: { server: Server }) {
             </span>
           </div>
           {isAdmin && (
-            <div className="flex items-center gap-2 pt-1">
-              <Input
-                value={agentUrl}
-                onChange={e => setAgentUrl(e.target.value)}
-                placeholder="http://192.168.1.10:8080"
-                className="font-mono text-xs h-7"
-              />
-              <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={handleSaveAgent} disabled={saving}>
-                <Save className="h-3.5 w-3.5" />
+            <div className="space-y-2 pt-1">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={agentUrl}
+                  onChange={e => setAgentUrl(e.target.value)}
+                  placeholder="http://192.168.1.10:8080"
+                  className="font-mono text-xs h-7"
+                />
+                <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={handleSaveAgent} disabled={saving}>
+                  <Save className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <Button size="sm" variant="link" className="h-auto p-0 text-xs text-primary" onClick={() => navigate('/agent-wizard')}>
+                <ExternalLink className="h-3 w-3 mr-1" /> Agent Setup Wizard
               </Button>
             </div>
           )}
