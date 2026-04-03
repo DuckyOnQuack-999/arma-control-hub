@@ -334,3 +334,13 @@ export function getBinaryDownloadUrl(filename: string): string {
   const { data } = supabase.storage.from('binaries').getPublicUrl(filename);
   return data.publicUrl;
 }
+
+// ─── Console Streaming (via Agent) ─────────────────────────
+
+export async function getConsoleLines(serverId: number, since?: number): Promise<{ lines: Array<{ timestamp: number; type: string; text: string }>; source: string }> {
+  const { data, error } = await supabase.functions.invoke('server-console', {
+    body: { serverId, since },
+  });
+  if (error) throw error;
+  return data;
+}

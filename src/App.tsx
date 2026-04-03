@@ -55,6 +55,7 @@ const App = () => (
                 <Route path="/servers/:id" element={<ServerDetailPage />} />
                 <Route path="/browser" element={<ServerBrowserPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/agent-wizard" element={<AgentWizardPage />} />
               </Route>
               <Route path="*" element={<NotFound />} />
             </Routes>
