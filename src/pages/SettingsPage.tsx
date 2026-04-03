@@ -19,6 +19,7 @@ import { toast } from '@/hooks/use-toast';
 import type { UserRole } from '@/data/types';
 
 const SettingsPage = () => {
+  const navigate = useNavigate();
   const { user } = useAuthStore();
   const queryClient = useQueryClient();
   const [deleteUserId, setDeleteUserId] = useState<string | null>(null);
