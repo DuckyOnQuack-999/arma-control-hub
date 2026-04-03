@@ -5,17 +5,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-function validateAgentUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    if (!['http:', 'https:'].includes(u.protocol)) return false;
-    if (u.hostname === '169.254.169.254') return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -24,7 +13,7 @@ Deno.serve(async (req) => {
   try {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Missing authorization' }), {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -44,8 +33,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { serverId } = await req.json();
-
+    const { serverId, since } = await req.json();
     if (!serverId) {
       return new Response(JSON.stringify({ error: 'serverId required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -53,7 +41,7 @@ Deno.serve(async (req) => {
     }
 
     const { data: server, error: serverErr } = await supabase
-      .from('servers').select('id, name, status, agent_url, port').eq('id', serverId).maybeSingle();
+      .from('servers').select('id, agent_url').eq('id', serverId).maybeSingle();
     if (serverErr || !server) {
       return new Response(JSON.stringify({ error: 'Server not found' }), {
         status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -61,70 +49,42 @@ Deno.serve(async (req) => {
     }
 
     if (!server.agent_url) {
-      return new Response(JSON.stringify({
-        success: true,
-        status: server.status,
-        message: 'No agent configured — returning database status only',
-      }), {
+      return new Response(JSON.stringify({ lines: [], source: 'database' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    if (!validateAgentUrl(server.agent_url)) {
-      return new Response(JSON.stringify({ error: 'Invalid agent URL configuration' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     const agentUrl = server.agent_url.replace(/\/$/, '');
+    const sinceParam = since ? `?since=${since}` : '';
+
     try {
-      const agentResp = await fetch(`${agentUrl}/status`, {
-        method: 'POST',
+      const agentResp = await fetch(`${agentUrl}/console${sinceParam}`, {
+        method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serverId: server.id }),
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(5000),
       });
 
       const agentData = await agentResp.json();
 
-      const updates: Record<string, unknown> = {};
-      if (agentData.status) updates.status = agentData.status;
-      if (typeof agentData.player_count === 'number') updates.player_count = agentData.player_count;
-      if (typeof agentData.cpu_percent === 'number') updates.cpu_percent = agentData.cpu_percent;
-      if (typeof agentData.memory_mb === 'number') updates.memory_mb = agentData.memory_mb;
-      if (agentData.current_map) updates.current_map = agentData.current_map;
-      if (typeof agentData.uptime === 'number') updates.uptime = agentData.uptime;
-
-      if (Object.keys(updates).length > 0) {
-        await supabase.from('servers').update(updates).eq('id', server.id);
-      }
-
-      if (typeof agentData.cpu_percent === 'number') {
-        await supabase.from('metrics').insert({
-          server_id: server.id,
-          cpu_percent: agentData.cpu_percent || 0,
-          memory_mb: agentData.memory_mb || 0,
-          player_count: agentData.player_count || 0,
-        });
-      }
-
       return new Response(JSON.stringify({
-        success: true,
-        ...agentData,
+        lines: agentData.lines || [],
+        source: 'agent',
+        timestamp: Date.now(),
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     } catch (fetchErr) {
-      console.error('Agent fetch error:', fetchErr);
+      console.error('Agent console fetch error:', fetchErr);
       return new Response(JSON.stringify({
-        error: 'Agent unreachable: connection failed',
-        status: server.status,
+        lines: [],
+        source: 'agent',
+        error: 'Agent unreachable',
       }), {
-        status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
   } catch (error) {
-    console.error('Server status error:', error);
+    console.error('Server console error:', error);
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
