@@ -113,6 +113,34 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
     return () => { supabase.removeChannel(channel); };
   }, [serverId]);
 
+  // Agent console polling
+  useEffect(() => {
+    if (!agentUrl) return;
+    let lastTs = Date.now();
+    const poll = async () => {
+      try {
+        const result = await getConsoleLines(serverId, lastTs);
+        if (result?.lines?.length) {
+          result.lines.forEach((l: any) => {
+            addLine({
+              id: lineIdCounter++,
+              timestamp: l.timestamp || Date.now() / 1000,
+              type: (l.type as ConsoleLineType) || 'system',
+              text: l.text || '',
+            });
+          });
+          lastTs = Date.now();
+        }
+        setConnected(true);
+      } catch {
+        // silent — agent may be offline
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 2000);
+    return () => clearInterval(interval);
+  }, [serverId, agentUrl]);
+
   useEffect(() => {
     if (autoScroll && outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
