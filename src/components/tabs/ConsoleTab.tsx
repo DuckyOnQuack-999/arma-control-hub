@@ -53,7 +53,7 @@ function eventToLineType(eventType: string): ConsoleLineType {
 
 let lineIdCounter = 100;
 
-export default function ConsoleTab({ serverId }: { serverId: number }) {
+export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; agentUrl?: string | null }) {
   const { lines, addLine, clearLines } = useConsoleStore();
   const [command, setCommand] = useState('');
   const [connected, setConnected] = useState(true);
