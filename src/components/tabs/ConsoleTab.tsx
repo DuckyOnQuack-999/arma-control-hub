@@ -222,7 +222,7 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
         <div className="flex items-center gap-2 text-xs">
           {connected ? (
             <span className="flex items-center gap-1.5 text-neon-green">
-              <Wifi className="h-3.5 w-3.5" /> Connected
+              <Wifi className="h-3.5 w-3.5" /> {agentUrl ? 'Live (Agent)' : 'Connected'}
             </span>
           ) : (
             <span className="flex items-center gap-1.5 text-neon-red"><WifiOff className="h-3.5 w-3.5" /> Disconnected</span>
