@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { useConsoleStore } from '@/stores/consoleStore';
-import { sendCommand } from '@/lib/supabaseApi';
+import { sendCommand, getConsoleLines } from '@/lib/supabaseApi';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
