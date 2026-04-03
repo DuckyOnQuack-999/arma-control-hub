@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { Server, ServerStatus } from '@/data/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ServerStatusBadge } from '@/components/server/ServerStatusBadge';
-import { Map, Clock, Users, Cpu, HardDrive, Wifi, WifiOff, Save } from 'lucide-react';
+import { Map, Clock, Users, Cpu, HardDrive, Wifi, WifiOff, Save, ExternalLink } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { updateServer } from '@/lib/supabaseApi';
