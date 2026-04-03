@@ -1,61 +1,48 @@
 
 
-# Fix Build Errors + Add Agent Wizard & Console Streaming
+# Hardwire Binaries & Full Edge Function Integration
 
-## 1. Fix Build Errors (all 3 edge functions)
+## What This Does
 
-The error: each function has both `import { corsHeaders } from '@supabase/supabase-js/cors'` AND a local `const corsHeaders = {...}` declaration, causing a conflict.
+Ensures the uploaded `armagetronad-dedicated` and `armagetronad-serverquery` binaries are fully integrated with the app, and all edge functions work correctly with real game servers on private networks.
 
-**Fix**: Remove the import line (line 2) from all three files. The local `const corsHeaders` definition is already correct and complete. For `server-browser/index.ts`, it only has the import — replace it with the local definition.
+## Changes
 
-### `supabase/functions/server-browser/index.ts`
-- Line 2: replace `import { corsHeaders } from '@supabase/supabase-js/cors'` with the local corsHeaders const
+### 1. Fix SSRF validation to allow private networks
+**Files**: `supabase/functions/server-control/index.ts`, `supabase/functions/server-status/index.ts`
 
-### `supabase/functions/server-control/index.ts`
-- Line 2: remove `import { corsHeaders } from '@supabase/supabase-js/cors'`
+The current `validateAgentUrl` blocks all private IPs (192.168.x, 10.x, 172.16-31.x, localhost). Game servers run on private networks, so this must be relaxed. Keep blocking only the cloud metadata endpoint (169.254.169.254).
 
-### `supabase/functions/server-status/index.ts`
-- Line 2: remove `import { corsHeaders } from '@supabase/supabase-js/cors'`
+### 2. Add automatic status polling for agent-connected servers
+**File**: `src/pages/ServerDetailPage.tsx`
 
-## 2. Host Agent Setup Wizard Page
+Add a `useEffect` with a 15-second interval that calls `pollServerStatus(serverId)` when the server has a non-empty `agent_url`. On success, trigger `refetch()` to sync live metrics from the host agent.
 
-New page at `/settings/agent-wizard` (or a section within Settings) that generates a ready-to-run install script.
+### 3. Show agent status in OverviewTab
+**File**: `src/components/tabs/OverviewTab.tsx`
 
-### New file: `src/pages/AgentWizardPage.tsx`
-- Form fields: Host IP/hostname, Agent port (default 8080), Game server binary path, Data dir, Config dir
-- "Generate Script" button produces a bash install script that:
-  - Downloads binaries from the storage bucket
-  - Sets up a systemd service for the agent
-  - Configures firewall rules
-  - Outputs the agent URL to paste into the panel
-- Copy-to-clipboard button for the generated script
-- Add route `/agent-wizard` to `App.tsx`
+- Add "Agent" row showing the URL or "Not configured (simulation mode)"
+- Add an inline editable `agent_url` field with save button for admins
+- Uses existing `updateServer` API
 
-## 3. Real-Time Console Streaming for Agent-Connected Servers
+### 4. Add agent indicator to ServerCard
+**File**: `src/components/server/ServerCard.tsx`
 
-Currently the console tab reads `server_events` from the database. For agent-connected servers, add a polling mechanism that fetches live console output from the agent.
+Show a small icon distinguishing agent-connected servers (Wifi icon) from simulation-mode servers (Monitor icon).
 
-### `supabase/functions/server-control/index.ts`
-- The `command` action already proxies to the agent. Add support for a `console_stream` action that fetches recent output lines from `GET /console` on the agent.
+### 5. Upload binaries to storage bucket
+The user uploaded `armagetronad-dedicated` and `armagetronad-serverquery`. These need to be copied into the `binaries` storage bucket so the download buttons on the Settings page actually serve the real files. This will be done by reading the uploaded files and uploading them to Supabase storage via the API in an edge function or script.
 
-### New edge function: `supabase/functions/server-console/index.ts`
-- Accepts `{ serverId }`, looks up server's `agent_url`
-- Calls `GET {agent_url}/console?since={timestamp}` to fetch new lines
-- Returns the lines to the client
+### 6. Update default paths in CreateServerModal
+**File**: `src/components/server/CreateServerModal.tsx`
 
-### `src/components/tabs/ConsoleTab.tsx`
-- When server has `agent_url`, poll `server-console` every 2 seconds for new lines
-- Merge agent console lines with existing realtime event stream
-- Show "Live (Agent)" indicator instead of just "Connected"
+Ensure defaults match the Armagetron standard paths:
+- Executable: `/usr/bin/armagetronad-dedicated` (already correct)
+- Data dir: `/usr/share/armagetronad` (already correct)
+- Config dir: `/etc/armagetronad/new` (already correct)
+- Default port: change from `4537` to `4534` (the actual Armagetron default)
 
-### `src/lib/supabaseApi.ts`
-- Add `getConsoleLines(serverId: number, since?: number)` function
+---
 
-## Summary
-
-- 3 edge function fixes (remove duplicate corsHeaders import)
-- 1 new page (Agent Wizard)
-- 1 new edge function (server-console)
-- Updates to ConsoleTab for agent streaming
-- Route addition in App.tsx
+**No database migrations needed.** 5 files modified, edge functions redeployed.
 

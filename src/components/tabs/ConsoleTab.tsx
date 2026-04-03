@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { useConsoleStore } from '@/stores/consoleStore';
-import { sendCommand } from '@/lib/supabaseApi';
+import { sendCommand, getConsoleLines } from '@/lib/supabaseApi';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,7 +53,7 @@ function eventToLineType(eventType: string): ConsoleLineType {
 
 let lineIdCounter = 100;
 
-export default function ConsoleTab({ serverId }: { serverId: number }) {
+export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; agentUrl?: string | null }) {
   const { lines, addLine, clearLines } = useConsoleStore();
   const [command, setCommand] = useState('');
   const [connected, setConnected] = useState(true);
@@ -112,6 +112,34 @@ export default function ConsoleTab({ serverId }: { serverId: number }) {
 
     return () => { supabase.removeChannel(channel); };
   }, [serverId]);
+
+  // Agent console polling
+  useEffect(() => {
+    if (!agentUrl) return;
+    let lastTs = Date.now();
+    const poll = async () => {
+      try {
+        const result = await getConsoleLines(serverId, lastTs);
+        if (result?.lines?.length) {
+          result.lines.forEach((l: any) => {
+            addLine({
+              id: lineIdCounter++,
+              timestamp: l.timestamp || Date.now() / 1000,
+              type: (l.type as ConsoleLineType) || 'system',
+              text: l.text || '',
+            });
+          });
+          lastTs = Date.now();
+        }
+        setConnected(true);
+      } catch {
+        // silent — agent may be offline
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 2000);
+    return () => clearInterval(interval);
+  }, [serverId, agentUrl]);
 
   useEffect(() => {
     if (autoScroll && outputRef.current) {
@@ -194,7 +222,7 @@ export default function ConsoleTab({ serverId }: { serverId: number }) {
         <div className="flex items-center gap-2 text-xs">
           {connected ? (
             <span className="flex items-center gap-1.5 text-neon-green">
-              <Wifi className="h-3.5 w-3.5" /> Connected
+              <Wifi className="h-3.5 w-3.5" /> {agentUrl ? 'Live (Agent)' : 'Connected'}
             </span>
           ) : (
             <span className="flex items-center gap-1.5 text-neon-red"><WifiOff className="h-3.5 w-3.5" /> Disconnected</span>

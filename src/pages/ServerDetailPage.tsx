@@ -122,7 +122,7 @@ const ServerDetailPage = () => {
           <TabsTrigger value="maps">Maps</TabsTrigger>
         </TabsList>
         <TabsContent value="overview"><OverviewTab server={server} /></TabsContent>
-        <TabsContent value="console"><ConsoleTab serverId={serverId} /></TabsContent>
+        <TabsContent value="console"><ConsoleTab serverId={serverId} agentUrl={server.agent_url} /></TabsContent>
         <TabsContent value="config"><ConfigTab serverId={serverId} serverStatus={server.status as ServerStatus} /></TabsContent>
         <TabsContent value="players"><PlayersTab serverId={serverId} /></TabsContent>
         <TabsContent value="logs"><LogsTab serverId={serverId} /></TabsContent>
