@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { toast } from '@/hooks/use-toast';
 
 export default function OverviewTab({ server }: { server: Server }) {
+  const navigate = useNavigate();
   const user = useAuthStore(s => s.user);
   const isAdmin = user?.role === 'admin';
   const [agentUrl, setAgentUrl] = useState(server.agent_url || '');
