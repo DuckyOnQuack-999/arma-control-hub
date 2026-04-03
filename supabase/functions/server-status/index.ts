@@ -116,11 +116,13 @@ Deno.serve(async (req) => {
       });
     } catch (fetchErr) {
       console.error('Agent fetch error:', fetchErr);
+      // Graceful fallback: return DB status instead of 502
       return new Response(JSON.stringify({
-        error: 'Agent unreachable: connection failed',
+        success: true,
         status: server.status,
+        agent_error: 'Agent unreachable — showing cached data',
       }), {
-        status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
   } catch (error) {

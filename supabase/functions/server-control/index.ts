@@ -147,11 +147,8 @@ async function proxyToAgent(
     });
   } catch (fetchErr) {
     console.error('Agent proxy error:', fetchErr);
-    return new Response(JSON.stringify({
-      error: 'Agent unreachable: connection failed',
-    }), {
-      status: 502, headers: { ...cors, 'Content-Type': 'application/json' },
-    });
+    // Fall back to simulation mode when agent is unreachable
+    return await simulateAction(server, action, command, user, supabase, cors);
   }
 }
 

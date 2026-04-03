@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { Server, ServerStatus } from '@/data/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ServerStatusBadge } from '@/components/server/ServerStatusBadge';
-import { Map, Clock, Users, Cpu, HardDrive, Wifi, WifiOff, Save } from 'lucide-react';
+import { Map, Clock, Users, Cpu, HardDrive, Wifi, WifiOff, Save, ExternalLink } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { updateServer } from '@/lib/supabaseApi';
@@ -10,6 +11,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { toast } from '@/hooks/use-toast';
 
 export default function OverviewTab({ server }: { server: Server }) {
+  const navigate = useNavigate();
   const user = useAuthStore(s => s.user);
   const isAdmin = user?.role === 'admin';
   const [agentUrl, setAgentUrl] = useState(server.agent_url || '');
@@ -51,15 +53,20 @@ export default function OverviewTab({ server }: { server: Server }) {
             </span>
           </div>
           {isAdmin && (
-            <div className="flex items-center gap-2 pt-1">
-              <Input
-                value={agentUrl}
-                onChange={e => setAgentUrl(e.target.value)}
-                placeholder="http://192.168.1.10:8080"
-                className="font-mono text-xs h-7"
-              />
-              <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={handleSaveAgent} disabled={saving}>
-                <Save className="h-3.5 w-3.5" />
+            <div className="space-y-2 pt-1">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={agentUrl}
+                  onChange={e => setAgentUrl(e.target.value)}
+                  placeholder="http://192.168.1.10:8080"
+                  className="font-mono text-xs h-7"
+                />
+                <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={handleSaveAgent} disabled={saving}>
+                  <Save className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <Button size="sm" variant="link" className="h-auto p-0 text-xs text-primary" onClick={() => navigate('/agent-wizard')}>
+                <ExternalLink className="h-3 w-3 mr-1" /> Agent Setup Wizard
               </Button>
             </div>
           )}
