@@ -13,6 +13,7 @@ import DashboardPage from "./pages/DashboardPage";
 import ServerDetailPage from "./pages/ServerDetailPage";
 import ServerBrowserPage from "./pages/ServerBrowserPage";
 import SettingsPage from "./pages/SettingsPage";
+import AgentWizardPage from "./pages/AgentWizardPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
