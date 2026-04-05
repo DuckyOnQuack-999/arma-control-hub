@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { createServer } from '@/lib/supabaseApi';
 import { toast } from '@/hooks/use-toast';
+import { useNavigate } from 'react-router-dom';
 
 interface Props {
   open: boolean;
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export function CreateServerModal({ open, onClose, onCreated }: Props) {
+  const navigate = useNavigate();
   const [form, setForm] = useState({
     name: '',
     executable_path: '/usr/bin/armagetronad-dedicated',
@@ -35,6 +37,13 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
     try {
       await createServer(form);
       toast({ title: 'Server created', description: `${form.name} has been added` });
+      if (!form.agent_url) {
+        toast({
+          title: 'No agent configured',
+          description: 'Set up a host agent for real server control',
+          action: <Button size="sm" variant="outline" className="text-xs" onClick={() => navigate('/agent-wizard')}>Setup Agent</Button>,
+        });
+      }
       onCreated();
       onClose();
       setForm({ name: '', executable_path: '/usr/bin/armagetronad-dedicated', data_dir: '/usr/share/armagetronad', config_dir: '/etc/armagetronad/new', port: 4534, max_players: 16, auto_restart: true, agent_url: '' });
