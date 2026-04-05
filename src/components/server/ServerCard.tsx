@@ -2,12 +2,17 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { ServerStatusBadge } from './ServerStatusBadge';
 import { Progress } from '@/components/ui/progress';
-import { Play, Square, RotateCcw, Users, Cpu, HardDrive, Wifi, Monitor } from 'lucide-react';
+import { Play, Square, RotateCcw, Users, Cpu, HardDrive, Wifi, Monitor, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Server, ServerStatus } from '@/data/types';
 import { serverAction } from '@/lib/supabaseApi';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/hooks/use-toast';
+
+const formatUptime = (s: number) => {
+  const d = Math.floor(s / 86400); const h = Math.floor((s % 86400) / 3600); const m = Math.floor((s % 3600) / 60);
+  return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
 
 export function ServerCard({ server }: { server: Server }) {
   const navigate = useNavigate();
@@ -26,6 +31,7 @@ export function ServerCard({ server }: { server: Server }) {
 
   const isRunning = server.status === 'online';
   const isStopped = server.status === 'offline';
+  const hasAgent = !!server.agent_url;
 
   return (
     <Card
@@ -38,7 +44,11 @@ export function ServerCard({ server }: { server: Server }) {
             <h3 className="font-display text-sm font-semibold text-foreground tracking-wide">{server.name}</h3>
             <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
               Port {server.port}
-              {server.agent_url ? <Wifi className="h-3 w-3 text-neon-green" /> : <Monitor className="h-3 w-3 text-muted-foreground" />}
+              {hasAgent ? (
+                <span className="inline-flex items-center gap-0.5 text-neon-green"><Wifi className="h-3 w-3" /> Agent</span>
+              ) : (
+                <span className="inline-flex items-center gap-0.5"><Monitor className="h-3 w-3" /> Sim</span>
+              )}
             </p>
           </div>
           <ServerStatusBadge status={server.status as ServerStatus} />
@@ -63,7 +73,18 @@ export function ServerCard({ server }: { server: Server }) {
               </div>
             </div>
             <Progress value={server.cpu_percent} className="h-1" />
+            {server.uptime > 0 && (
+              <div className="flex items-center gap-1 mt-2 text-[10px] text-muted-foreground">
+                <Clock className="h-3 w-3" /> Uptime: {formatUptime(server.uptime)}
+              </div>
+            )}
           </>
+        )}
+
+        {isStopped && server.updated_at && (
+          <div className="text-[10px] text-muted-foreground mt-1">
+            Last seen: {new Date(server.updated_at).toLocaleString()}
+          </div>
         )}
 
         <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-border">
