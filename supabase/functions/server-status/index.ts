@@ -2,7 +2,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey',
 };
 
 function validateAgentUrl(url: string): boolean {
@@ -18,7 +19,10 @@ function validateAgentUrl(url: string): boolean {
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, {
+      status: 200,
+      headers: corsHeaders
+    });
   }
 
   try {
@@ -66,6 +70,7 @@ Deno.serve(async (req) => {
         status: server.status,
         message: 'No agent configured — returning database status only',
       }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -112,6 +117,7 @@ Deno.serve(async (req) => {
         success: true,
         ...agentData,
       }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     } catch (fetchErr) {
@@ -122,6 +128,7 @@ Deno.serve(async (req) => {
         status: server.status,
         agent_error: 'Agent unreachable — showing cached data',
       }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
