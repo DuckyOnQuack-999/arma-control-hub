@@ -23,7 +23,8 @@ const SettingsPage = () => {
   const { user } = useAuthStore();
   const queryClient = useQueryClient();
   const [deleteUserId, setDeleteUserId] = useState<string | null>(null);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(() => localStorage.getItem('rxtron_notifications') !== 'false');
+  const [notifPermission, setNotifPermission] = useState(() => 'Notification' in window ? Notification.permission : 'unsupported');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -149,9 +150,17 @@ const SettingsPage = () => {
           <div className="flex items-center justify-between">
             <div>
               <Label className="text-sm">Notifications</Label>
-              <p className="text-xs text-muted-foreground">Receive alerts for server events</p>
+              <p className="text-xs text-muted-foreground">
+                Receive alerts for server events · Permission: <span className="font-mono text-primary">{notifPermission}</span>
+              </p>
             </div>
-            <Switch checked={notificationsEnabled} onCheckedChange={setNotificationsEnabled} />
+            <Switch checked={notificationsEnabled} onCheckedChange={v => {
+              setNotificationsEnabled(v);
+              localStorage.setItem('rxtron_notifications', String(v));
+              if (v && 'Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission().then(p => setNotifPermission(p));
+              }
+            }} />
           </div>
         </CardContent>
       </Card>

@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
-import { Copy, Terminal, Server, Download } from 'lucide-react';
+import { Copy, Terminal, Server, Download, CheckCircle, XCircle, FileDown } from 'lucide-react';
 import { getBinaryDownloadUrl } from '@/lib/supabaseApi';
 
 export default function AgentWizardPage() {
@@ -16,9 +16,27 @@ export default function AgentWizardPage() {
   const [configDir, setConfigDir] = useState('/etc/armagetronad/new');
   const [gamePort, setGamePort] = useState('4534');
   const [generated, setGenerated] = useState('');
+  const [testingDedicated, setTestingDedicated] = useState(false);
+  const [testingQuery, setTestingQuery] = useState(false);
 
   const dedicatedUrl = getBinaryDownloadUrl('armagetronad-dedicated');
   const queryUrl = getBinaryDownloadUrl('armagetronad-serverquery');
+
+  const testDownload = async (url: string, name: string, setLoading: (v: boolean) => void) => {
+    setLoading(true);
+    try {
+      const res = await fetch(url, { method: 'HEAD' });
+      if (res.ok) {
+        toast({ title: `✅ ${name}`, description: 'Binary is accessible and ready for download' });
+      } else {
+        toast({ title: `❌ ${name}`, description: `HTTP ${res.status} — binary may not be uploaded yet`, variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: `❌ ${name}`, description: 'Could not reach storage — check if binary is uploaded', variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const generateScript = () => {
     if (!hostIp.trim()) {
@@ -143,6 +161,17 @@ echo "╚═══════════════════════�
     toast({ title: 'Copied to clipboard' });
   };
 
+  const downloadScript = () => {
+    const blob = new Blob([generated], { type: 'text/x-shellscript' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `rxtron-agent-setup-${hostIp.replace(/[^a-zA-Z0-9.-]/g, '_')}.sh`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: 'Script downloaded' });
+  };
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       <div>
@@ -154,6 +183,25 @@ echo "╚═══════════════════════�
           Generate an install script for your game server machine. The agent enables remote management from this panel.
         </p>
       </div>
+
+      {/* Binary Availability */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <Download className="h-4 w-4" />
+            Binary Availability
+          </CardTitle>
+          <CardDescription>Test that game server binaries are accessible from the storage bucket</CardDescription>
+        </CardHeader>
+        <CardContent className="flex gap-3 flex-wrap">
+          <Button variant="outline" size="sm" className="text-xs" onClick={() => testDownload(dedicatedUrl, 'armagetronad-dedicated', setTestingDedicated)} disabled={testingDedicated}>
+            {testingDedicated ? '…' : <CheckCircle className="h-3 w-3 mr-1" />} Test dedicated
+          </Button>
+          <Button variant="outline" size="sm" className="text-xs" onClick={() => testDownload(queryUrl, 'armagetronad-serverquery', setTestingQuery)} disabled={testingQuery}>
+            {testingQuery ? '…' : <CheckCircle className="h-3 w-3 mr-1" />} Test serverquery
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -205,12 +253,17 @@ echo "╚═══════════════════════�
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2">
-                <Download className="h-5 w-5" />
+                <FileDown className="h-5 w-5" />
                 Install Script
               </CardTitle>
-              <Button variant="outline" size="sm" onClick={copyScript}>
-                <Copy className="h-4 w-4 mr-1" /> Copy
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={downloadScript}>
+                  <Download className="h-4 w-4 mr-1" /> Download .sh
+                </Button>
+                <Button variant="outline" size="sm" onClick={copyScript}>
+                  <Copy className="h-4 w-4 mr-1" /> Copy
+                </Button>
+              </div>
             </div>
             <CardDescription>Run this script as root on your game server host</CardDescription>
           </CardHeader>

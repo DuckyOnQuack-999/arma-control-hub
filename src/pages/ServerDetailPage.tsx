@@ -6,7 +6,7 @@ import { ServerStatusBadge } from '@/components/server/ServerStatusBadge';
 import { ServerControlBar } from '@/components/server/ServerControlBar';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { toast } from '@/hooks/use-toast';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import ConsoleTab from '@/components/tabs/ConsoleTab';
 import PlayersTab from '@/components/tabs/PlayersTab';
@@ -22,6 +22,7 @@ const ServerDetailPage = () => {
   const { id } = useParams<{ id: string }>();
   const serverId = Number(id);
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
 
   const { data: server, isLoading, refetch } = useQuery({
     queryKey: ['server', serverId],
@@ -111,7 +112,7 @@ const ServerDetailPage = () => {
         </div>
       )}
 
-      <Tabs defaultValue="overview">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="bg-muted border border-border">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="console">Console</TabsTrigger>
@@ -121,7 +122,7 @@ const ServerDetailPage = () => {
           <TabsTrigger value="metrics">Metrics</TabsTrigger>
           <TabsTrigger value="maps">Maps</TabsTrigger>
         </TabsList>
-        <TabsContent value="overview"><OverviewTab server={server} /></TabsContent>
+        <TabsContent value="overview"><OverviewTab server={server} onTabChange={setActiveTab} /></TabsContent>
         <TabsContent value="console"><ConsoleTab serverId={serverId} agentUrl={server.agent_url} /></TabsContent>
         <TabsContent value="config"><ConfigTab serverId={serverId} serverStatus={server.status as ServerStatus} /></TabsContent>
         <TabsContent value="players"><PlayersTab serverId={serverId} /></TabsContent>

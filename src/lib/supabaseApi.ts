@@ -335,6 +335,21 @@ export function getBinaryDownloadUrl(filename: string): string {
   return data.publicUrl;
 }
 
+// ─── Recent Events (all servers) ──────────────────────────
+
+export async function getRecentEventsAll(limit = 10): Promise<Array<ServerEvent & { server_name?: string }>> {
+  const { data: events, error } = await supabase.from('server_events').select('*')
+    .order('occurred_at', { ascending: false }).limit(limit);
+  if (error) throw error;
+  if (!events || events.length === 0) return [];
+
+  const serverIds = [...new Set(events.map(e => e.server_id))];
+  const { data: servers } = await supabase.from('servers').select('id, name').in('id', serverIds);
+  const nameMap = new Map((servers ?? []).map(s => [s.id, s.name]));
+
+  return events.map(e => ({ ...e, server_name: nameMap.get(e.server_id) || `Server #${e.server_id}` }));
+}
+
 // ─── Console Streaming (via Agent) ─────────────────────────
 
 export async function getConsoleLines(serverId: number, since?: number): Promise<{ lines: Array<{ timestamp: number; type: string; text: string }>; source: string }> {

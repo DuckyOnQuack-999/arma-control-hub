@@ -1,20 +1,23 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { NavLink } from '@/components/NavLink';
 import { useAuthStore } from '@/stores/authStore';
 import { getServers, getRecentEventCount } from '@/lib/supabaseApi';
+import { supabase } from '@/integrations/supabase/client';
 import {
-  LayoutDashboard, Globe, Settings, Terminal, LogOut, Menu, X, ChevronDown, Bell, Server,
+  LayoutDashboard, Globe, Settings, Terminal, LogOut, Menu, X, ChevronDown, Bell, Server, Wand2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { toast } from '@/hooks/use-toast';
 
 const navItems = [
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
   { title: 'Server Browser', url: '/browser', icon: Globe },
+  { title: 'Agent Wizard', url: '/agent-wizard', icon: Wand2 },
   { title: 'Settings', url: '/settings', icon: Settings },
 ];
 
@@ -22,6 +25,7 @@ export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
+  const prevStatuses = useRef<Map<number, string>>(new Map());
 
   const { data: servers = [] } = useQuery({
     queryKey: ['servers'],
@@ -34,6 +38,58 @@ export function AppShell() {
     queryFn: () => getRecentEventCount(1),
     refetchInterval: 60_000,
   });
+
+  // Real-time server crash/offline notifications
+  useEffect(() => {
+    const channel = supabase
+      .channel('server-alerts')
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'servers',
+      }, (payload) => {
+        const newRow = payload.new as any;
+        const oldStatus = prevStatuses.current.get(newRow.id);
+        const newStatus = newRow.status;
+
+        if (oldStatus && oldStatus !== newStatus && (newStatus === 'crashed' || newStatus === 'offline')) {
+          const title = newStatus === 'crashed' ? '🔴 Server Crashed' : '⚠️ Server Offline';
+          toast({
+            title,
+            description: `${newRow.name} is now ${newStatus}`,
+            variant: 'destructive',
+          });
+
+          // Browser push notification
+          const notifEnabled = localStorage.getItem('rxtron_notifications') !== 'false';
+          if (notifEnabled && 'Notification' in window && Notification.permission === 'granted') {
+            new Notification(title, { body: `${newRow.name} is now ${newStatus}`, icon: '/placeholder.svg' });
+          }
+        }
+
+        prevStatuses.current.set(newRow.id, newStatus);
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  // Seed initial statuses
+  useEffect(() => {
+    servers.forEach(s => {
+      if (!prevStatuses.current.has(s.id)) {
+        prevStatuses.current.set(s.id, s.status);
+      }
+    });
+  }, [servers]);
+
+  // Request notification permission on mount
+  useEffect(() => {
+    const notifEnabled = localStorage.getItem('rxtron_notifications') !== 'false';
+    if (notifEnabled && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
 
   const handleLogout = async () => {
     await logout();
