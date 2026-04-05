@@ -111,7 +111,8 @@ const ServerDetailPage = () => {
         </div>
       )}
 
-      <Tabs defaultValue="overview">
+      <Tabs defaultValue="overview" onValueChange={() => {}}>
+        {(tabValue: string) => null}
         <TabsList className="bg-muted border border-border">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="console">Console</TabsTrigger>
