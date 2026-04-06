@@ -14,11 +14,14 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { toast } from '@/hooks/use-toast';
 
-const navItems = [
+const baseNavItems = [
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
   { title: 'Server Browser', url: '/browser', icon: Globe },
-  { title: 'Agent Wizard', url: '/agent-wizard', icon: Wand2 },
   { title: 'Settings', url: '/settings', icon: Settings },
+];
+
+const adminNavItems = [
+  { title: 'Agent Wizard', url: '/agent-wizard', icon: Wand2 },
 ];
 
 export function AppShell() {
@@ -114,7 +117,19 @@ export function AppShell() {
         </div>
 
         <nav className="flex-1 space-y-1 px-3 py-4">
-          {navItems.map((item) => (
+          {baseNavItems.map((item) => (
+            <NavLink
+              key={item.url}
+              to={item.url}
+              className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-body font-medium text-muted-foreground transition-all hover:bg-muted hover:text-foreground"
+              activeClassName="bg-primary/10 text-primary border border-primary/30 shadow-[0_0_8px_hsl(var(--primary)/0.2)]"
+              onClick={() => setSidebarOpen(false)}
+            >
+              <item.icon className="h-4 w-4" />
+              {item.title}
+            </NavLink>
+          ))}
+          {(user?.role === 'admin' || user?.role === 'moderator') && adminNavItems.map((item) => (
             <NavLink
               key={item.url}
               to={item.url}

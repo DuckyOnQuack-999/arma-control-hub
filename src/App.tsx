@@ -14,6 +14,7 @@ import ServerDetailPage from "./pages/ServerDetailPage";
 import ServerBrowserPage from "./pages/ServerBrowserPage";
 import SettingsPage from "./pages/SettingsPage";
 import AgentWizardPage from "./pages/AgentWizardPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -49,6 +50,7 @@ const App = () => (
           <BrowserRouter>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
                 <Route path="/dashboard" element={<DashboardPage />} />

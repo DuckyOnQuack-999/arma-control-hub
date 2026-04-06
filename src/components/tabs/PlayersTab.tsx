@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getPlayers, getBans, kickPlayer, banPlayer, unban } from '@/lib/supabaseApi';
+import { getPlayers, getBans, kickPlayer, banPlayer, unban, serverAction } from '@/lib/supabaseApi';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,8 +53,13 @@ export default function PlayersTab({ serverId }: { serverId: number }) {
     toast({ title: 'Player unbanned' });
   };
 
-  const handleSilence = (name: string) => {
-    toast({ title: 'Player silenced', description: `${name} has been silenced` });
+  const handleSilence = async (name: string) => {
+    try {
+      await serverAction(serverId, 'command', `SILENCE ${name}`);
+      toast({ title: 'Player silenced', description: `${name} has been silenced` });
+    } catch (err: any) {
+      toast({ title: 'Silence failed', description: err?.message, variant: 'destructive' });
+    }
   };
 
   const formatTime = (ts: string) => {

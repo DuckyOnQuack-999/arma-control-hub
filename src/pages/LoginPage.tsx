@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
+import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Terminal } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
@@ -14,6 +16,9 @@ const LoginPage = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isRegister, setIsRegister] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
   const { login, register, isAuthenticated } = useAuthStore();
   const navigate = useNavigate();
 
@@ -121,12 +126,47 @@ const LoginPage = () => {
             <Button type="submit" className="w-full font-display text-xs tracking-widest" disabled={loading}>
               {loading ? (isRegister ? 'CREATING...' : 'AUTHENTICATING...') : (isRegister ? 'CREATE ACCOUNT' : 'ACCESS GRID')}
             </Button>
+            {!isRegister && (
+              <button type="button" onClick={() => { setResetEmail(email); setForgotOpen(true); }} className="block mx-auto text-xs text-primary hover:underline">
+                Forgot Password?
+              </button>
+            )}
             <p className="text-center text-xs text-muted-foreground">
               {isRegister ? 'First user becomes admin automatically' : 'Sign in with your email and password'}
             </p>
           </form>
         </CardContent>
       </Card>
+
+      <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+        <DialogContent className="border-border bg-card">
+          <DialogHeader><DialogTitle className="font-display text-sm">Reset Password</DialogTitle></DialogHeader>
+          <div className="space-y-2">
+            <Label className="text-xs">Email address</Label>
+            <Input type="email" value={resetEmail} onChange={e => setResetEmail(e.target.value)} placeholder="your@email.com" className="border-border bg-muted font-mono" />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setForgotOpen(false)}>Cancel</Button>
+            <Button disabled={resetLoading || !resetEmail.trim()} onClick={async () => {
+              setResetLoading(true);
+              try {
+                const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+                  redirectTo: `${window.location.origin}/reset-password`,
+                });
+                if (error) throw error;
+                toast({ title: 'Reset link sent', description: 'Check your email for a password reset link.' });
+                setForgotOpen(false);
+              } catch (err: any) {
+                toast({ title: 'Failed', description: err?.message, variant: 'destructive' });
+              } finally {
+                setResetLoading(false);
+              }
+            }}>
+              {resetLoading ? 'Sending...' : 'Send Reset Link'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
