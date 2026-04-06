@@ -1,102 +1,133 @@
 
 
-# Full Enhancement: Notifications, Health Chart, Binary Integration & Hardwiring
+# Complete Code Review, Bug Fixes & Feature Expansion
 
-## Overview
+## Blank Page Root Cause
 
-This plan covers all requested enhancements: crash/offline notifications, a dashboard health chart, ensuring all binaries and edge functions are fully wired, and expanding existing features.
+The blank page is caused by the `get_user_role` RPC call in `authStore.ts` line 25. If the user has no role entry in `user_roles` (new users), the RPC returns `null`, and the role defaults to `'viewer'`. However, the RLS policies require roles for all data access — so a user without a `user_roles` row can authenticate but sees nothing (queries return empty/error). The real fix: ensure a role row is created on signup via a database trigger.
 
-## 1. Server Crash/Offline In-App Notifications
+Additionally, the `ProtectedRoute` timeout of 5 seconds can cause a flash-to-login if `resolveSession` takes too long due to the RPC call.
 
-**No email setup needed** — use browser toast notifications triggered by real-time Supabase subscriptions.
+## Issues Found
 
-**File: `src/components/layout/AppShell.tsx`**
-- Add a `useEffect` that subscribes to `postgres_changes` on the `servers` table for `UPDATE` events
-- When a server's status changes to `crashed` or `offline`, show a toast notification with the server name and a link to the server detail page
-- Play a browser notification sound (optional) via `new Audio().play()`
-- Add a `useEffect` for `Notification.requestPermission()` to enable browser push notifications when the Settings toggle is on
-- When status changes to `crashed`/`offline`, also fire `new Notification(...)` for browser-native push if permission granted
+### 1. Missing auto-role assignment on signup
+New users get no `user_roles` row. The first user should be `admin`, subsequent users `viewer`. A database trigger is needed.
 
-**File: `src/pages/SettingsPage.tsx`**
-- Wire the existing `notificationsEnabled` switch to `localStorage` so it persists
-- When toggled on, request browser notification permission
-- Show current permission state (granted/denied/default)
+### 2. `handleSilence` in PlayersTab is a no-op (line 56-58)
+It shows a toast but never sends the `SILENCE` command to the server. Must call `serverAction(serverId, 'command', 'SILENCE playerName')`.
 
-## 2. Dashboard Health Summary Chart
+### 3. Console `handleReconnect` is fake (line 212-215)
+It just sets `connected = true` and shows a toast. It should unsubscribe and re-subscribe to the Supabase channel.
 
-**File: `src/pages/DashboardPage.tsx`**
-- Add a new card section below stats: "Server Health" with a `PieChart` (from Recharts, already installed) showing online/offline/crashed/starting distribution
-- Add a `BarChart` showing per-server player count comparison
-- Add a recent events feed (last 10 events across all servers) using `getEvents` or a new `getRecentEvents` query from `server_events` table
-- Subscribe to real-time changes on `servers` table (already done) to keep charts live
+### 4. `getRecentEventsAll` joins server name manually
+This works but is inefficient. Should use a single query or accept current approach (it's fine functionally).
 
-**File: `src/lib/supabaseApi.ts`**
-- Add `getRecentEventsAll(limit: number)` — queries `server_events` ordered by `occurred_at DESC` with limit, joining server name
+### 5. No password reset flow
+Login page has no "Forgot Password" link. No `/reset-password` route exists.
 
-## 3. Ensure All Binaries Are Hardwired
+### 6. No delete server confirmation or functionality from dashboard
+`ServerCard` has no delete button. `deleteServer` exists in API but is unreachable from UI.
 
-The uploaded binaries (`armagetronad-dedicated`, `armagetronad-serverquery`) were uploaded to `/mnt/documents/` during a previous step. They need to be pushed to the `binaries` storage bucket.
+### 7. Missing realtime on `server_events` table
+The `server_events` table is used for realtime subscriptions in `ConsoleTab` but may not be added to the `supabase_realtime` publication.
 
-**Action: Upload binaries to storage bucket**
-- Read files from `/mnt/documents/user-uploads/` (or wherever they landed)
-- Upload to Supabase `binaries` bucket via a script using the service role key
-- Verify the download URLs in Settings page work by checking `getBinaryDownloadUrl` output
+### 8. Metrics INSERT policy blocks edge functions
+The metrics INSERT policy requires `has_role(auth.uid(), 'admin')` — but edge functions use the service role key, which bypasses RLS. This is actually fine since service role bypasses RLS.
 
-**File: `src/pages/AgentWizardPage.tsx`**
-- Add a "Test Download" button that fetches the binary URL and confirms it's accessible (HEAD request)
-- Add a "Download Script" button that downloads the generated script as a `.sh` file
+### 9. Binary storage bucket may not be public
+`getBinaryDownloadUrl` uses `getPublicUrl` but the `binaries` bucket may not have public access enabled, causing the Agent Wizard download test to fail.
 
-## 4. Hardwire Everything Together — Integration Audit
+## Plan
 
-Ensure all components reference each other correctly:
+### Database Migration
+Create a trigger to auto-assign roles on signup:
+```sql
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+DECLARE
+  user_count int;
+  assigned_role app_role;
+BEGIN
+  SELECT count(*) INTO user_count FROM public.user_roles;
+  IF user_count = 0 THEN
+    assigned_role := 'admin';
+  ELSE
+    assigned_role := 'viewer';
+  END IF;
+  INSERT INTO public.user_roles (user_id, role)
+  VALUES (NEW.id, assigned_role)
+  ON CONFLICT (user_id, role) DO NOTHING;
+  
+  INSERT INTO public.profiles (id, email)
+  VALUES (NEW.id, NEW.email)
+  ON CONFLICT (id) DO NOTHING;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
-**Navigation links — add missing cross-links:**
-- `AppShell.tsx`: Add "Agent Wizard" nav item for admin users
-- `DashboardPage.tsx`: Add a "Quick Actions" section with links to Agent Wizard, Settings, Server Browser
+CREATE OR REPLACE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_new_user();
+```
 
-**Server creation flow:**
-- `CreateServerModal.tsx`: After creating a server, show a toast with a link to set up the agent if no `agent_url` was provided
-- Verify default port is 4534 (already done)
+Also enable realtime on `servers` and `server_events`:
+```sql
+ALTER PUBLICATION supabase_realtime ADD TABLE public.servers;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.server_events;
+```
 
-**Edge function consistency:**
-- All 4 edge functions (`server-control`, `server-status`, `server-console`, `server-browser`) already have consistent CORS headers, auth checks, and SSRF validation
-- No changes needed — they're clean
+### File: `src/stores/authStore.ts`
+- Add fallback: if `get_user_role` returns null, default to `'viewer'` (already done, but add explicit handling)
+- Add retry logic with a brief delay if role lookup fails on first try
 
-**Server status polling chain:**
-- `ServerDetailPage.tsx` polls `server-status` every 15s ✓
-- `server-status` edge function updates `servers` table ✓
-- Realtime subscription on `servers` table triggers `refetch` ✓
-- `DashboardPage.tsx` has realtime subscription on `servers` table ✓
-- Full loop is wired
+### File: `src/pages/LoginPage.tsx`
+- Add "Forgot Password?" link below the form
+- Create a `ForgotPasswordDialog` that calls `supabase.auth.resetPasswordForEmail()`
 
-## 5. Expand Existing Features
+### New File: `src/pages/ResetPasswordPage.tsx`
+- Route: `/reset-password`
+- Checks URL for `type=recovery` hash
+- Shows new password form
+- Calls `supabase.auth.updateUser({ password })`
 
-**File: `src/components/server/ServerCard.tsx`**
-- Add uptime display for online servers
-- Add last-seen timestamp for offline servers
-- Show "Agent" or "Simulation" text label next to the icon (currently icon-only)
+### File: `src/App.tsx`
+- Add `/reset-password` route (public, outside `ProtectedRoute`)
 
-**File: `src/components/tabs/OverviewTab.tsx`**
-- Add a "Quick Actions" section: direct links to Console, Config, Players tabs
-- Show data directory and config directory paths
-- Add "Test Agent Connection" button that calls `pollServerStatus` and shows result
+### File: `src/components/tabs/PlayersTab.tsx`
+- Fix `handleSilence`: actually send `SILENCE` command via `serverAction(serverId, 'command', \`SILENCE ${name}\`)`
+- Add error handling
 
-**File: `src/pages/DashboardPage.tsx`**
-- Add total uptime across all servers
-- Add a "Recent Activity" feed showing the last 5 server events
+### File: `src/components/tabs/ConsoleTab.tsx`
+- Fix `handleReconnect`: unsubscribe existing channel and re-create the subscription
+- Store channel ref to enable proper cleanup
 
-## Summary of Changes
+### File: `src/components/server/ServerCard.tsx`
+- Add a delete button (trash icon) with confirmation dialog
+- Call `deleteServer(server.id)` and invalidate queries
 
-| File | Change |
-|------|--------|
-| `src/components/layout/AppShell.tsx` | Real-time crash/offline notifications, browser push, Agent Wizard nav link |
-| `src/pages/DashboardPage.tsx` | Health pie chart, player bar chart, recent activity feed, total uptime stat |
-| `src/pages/SettingsPage.tsx` | Wire notification toggle to localStorage + browser permission |
-| `src/lib/supabaseApi.ts` | Add `getRecentEventsAll()` |
-| `src/components/server/ServerCard.tsx` | Uptime display, agent label text |
-| `src/components/tabs/OverviewTab.tsx` | Test agent button, quick action links, show paths |
-| `src/pages/AgentWizardPage.tsx` | Test download button, download script as file |
-| Upload script | Push binaries to storage bucket |
+### File: `src/pages/DashboardPage.tsx`
+- Add "delete" support via `ServerCard` (already handled by card changes)
 
-**Database migrations: None required.** All tables and columns already exist.
+### File: `src/pages/SettingsPage.tsx`
+- Add dark/light theme toggle (currently dark-only, add the preference)
+- Persist theme in localStorage
+
+### File: `src/components/layout/AppShell.tsx`
+- Show "Agent Wizard" nav link only for admin/moderator users (currently shown to all)
+
+## Summary
+
+| Change | File |
+|--------|------|
+| Auto-assign role on signup trigger | DB migration |
+| Enable realtime publication | DB migration |
+| Forgot password + reset page | LoginPage, new ResetPasswordPage, App.tsx |
+| Fix SILENCE command (no-op) | PlayersTab.tsx |
+| Fix console reconnect (fake) | ConsoleTab.tsx |
+| Add delete server from card | ServerCard.tsx |
+| Role-gate Agent Wizard nav | AppShell.tsx |
+
+No new edge functions needed. 1 migration, 1 new page, 6 files modified.
 
