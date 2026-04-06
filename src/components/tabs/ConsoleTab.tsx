@@ -209,9 +209,33 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
     URL.revokeObjectURL(url);
   };
 
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
   const handleReconnect = () => {
-    setConnected(true);
     toast({ title: 'Reconnecting...', description: 'Re-subscribing to console stream' });
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+    }
+    const channel = supabase
+      .channel(`console-${serverId}-${Date.now()}`)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'server_events',
+        filter: `server_id=eq.${serverId}`,
+      }, (payload) => {
+        const e = payload.new as any;
+        const line: ConsoleLine = {
+          id: lineIdCounter++,
+          timestamp: new Date(e.occurred_at).getTime() / 1000,
+          type: eventToLineType(e.event_type),
+          text: `[${e.event_type.toUpperCase()}] ${typeof e.payload === 'object' ? JSON.stringify(e.payload) : e.payload}`,
+        };
+        addLine(line);
+        setConnected(true);
+      })
+      .subscribe((status) => {
+        setConnected(status === 'SUBSCRIBED');
+      });
+    channelRef.current = channel;
   };
 
   const formatTime = (ts: number) => new Date(ts * 1000).toLocaleTimeString();

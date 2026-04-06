@@ -1,12 +1,15 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { ServerStatusBadge } from './ServerStatusBadge';
 import { Progress } from '@/components/ui/progress';
-import { Play, Square, RotateCcw, Users, Cpu, HardDrive, Wifi, Monitor, Clock } from 'lucide-react';
+import { Play, Square, RotateCcw, Users, Cpu, HardDrive, Wifi, Monitor, Clock, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import type { Server, ServerStatus } from '@/data/types';
-import { serverAction } from '@/lib/supabaseApi';
+import { serverAction, deleteServer } from '@/lib/supabaseApi';
 import { useQueryClient } from '@tanstack/react-query';
+import { useAuthStore } from '@/stores/authStore';
 import { toast } from '@/hooks/use-toast';
 
 const formatUptime = (s: number) => {
@@ -17,6 +20,24 @@ const formatUptime = (s: number) => {
 export function ServerCard({ server }: { server: Server }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeleteOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    try {
+      await deleteServer(server.id);
+      queryClient.invalidateQueries({ queryKey: ['servers'] });
+      toast({ title: 'Server deleted', description: `${server.name} has been removed` });
+    } catch (err: any) {
+      toast({ title: 'Delete failed', description: err?.message, variant: 'destructive' });
+    }
+    setDeleteOpen(false);
+  };
 
   const handleAction = async (e: React.MouseEvent, action: 'start' | 'stop' | 'restart') => {
     e.stopPropagation();
@@ -97,7 +118,24 @@ export function ServerCard({ server }: { server: Server }) {
           <Button size="icon" variant="ghost" className="h-7 w-7" disabled={!isRunning} onClick={e => handleAction(e, 'restart')}>
             <RotateCcw className="h-3.5 w-3.5 text-neon-yellow" />
           </Button>
+          {user?.role === 'admin' && (
+            <>
+              <div className="flex-1" />
+              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={handleDelete}>
+                <Trash2 className="h-3.5 w-3.5 text-destructive" />
+              </Button>
+            </>
+          )}
         </div>
+
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title="Delete Server"
+          description={`Are you sure you want to delete "${server.name}"? This cannot be undone.`}
+          destructive
+          onConfirm={confirmDelete}
+        />
       </CardContent>
     </Card>
   );
