@@ -1,93 +1,149 @@
 
 
-# Fix Blank Page on Publish + Full Code Review & Enhancements
+# Full Pipeline: Agent-Centric Architecture, Remote File Manager, Server Launch Integration
 
-## Root Cause: Blank Page on Publish
+## Context
 
-**Two issues combine to cause the blank page:**
+The panel currently manages servers via edge functions that proxy to an agent HTTP endpoint on the VPS. The Agent Wizard generates a setup script but is disconnected from the server creation flow. The user wants:
 
-1. **`onAuthStateChange` deadlock**: In `authStore.ts`, the `resolveSession` function is `async` and is called inside `onAuthStateChange`. Supabase's auth event queue blocks while this callback runs. The `supabase.rpc('get_user_role')` call inside it creates a deadlock — the RPC needs the auth token, but the auth state change hasn't finished processing. On cold start (published app), there's no cached session, so `getSession()` returns null, the user sees the login page, logs in, `onAuthStateChange` fires, and the RPC call deadlocks. The preview works because HMR restarts keep the session warm.
+1. **Agent Wizard as the central hub** for all host/agent configuration
+2. **Server creation triggers a real dedicated server launch** on the VPS via the agent
+3. **Remote file manager** — browse, upload, rename, edit, delete files on the VPS through the agent
+4. **localhost support** — agent_url can be `http://localhost:8080` or `http://127.0.0.1:8080`
 
-2. **Missing database trigger**: The migration `20260406072054` creates both the `handle_new_user` trigger AND adds tables to `supabase_realtime`. If the tables were already in the publication (they are), the `ALTER PUBLICATION` lines fail, rolling back the entire migration — including the trigger. So the trigger was **never created** on the live database. New users who register get no `user_roles` row, meaning `get_user_role` returns null, and RLS blocks all data access.
+## Architecture
 
-## Fix Plan
-
-### Database Migration (new)
-- Re-create the `on_auth_user_created` trigger with `IF NOT EXISTS` / `DROP TRIGGER IF EXISTS` pattern
-- Use `BEGIN ... EXCEPTION` blocks for the `ALTER PUBLICATION` lines to prevent rollback on duplicate
-- This ensures the trigger actually gets applied on both test and live
-
-```sql
--- Safely re-apply trigger
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
--- Safe publication adds (ignore if already present)
-DO $$ BEGIN
-  ALTER PUBLICATION supabase_realtime ADD TABLE public.servers;
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-DO $$ BEGIN
-  ALTER PUBLICATION supabase_realtime ADD TABLE public.server_events;
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+```text
+┌─────────────┐    HTTPS    ┌──────────────┐    HTTP    ┌─────────────────┐
+│  Panel UI   │ ──────────> │ Edge Function │ ────────> │  Host Agent     │
+│  (Lovable)  │             │  (Supabase)   │           │  (VPS/localhost) │
+└─────────────┘             └──────────────┘           │                 │
+                                                       │  /control       │
+                                                       │  /status        │
+                                                       │  /console       │
+                                                       │  /files/*  NEW  │
+                                                       │  /launch   NEW  │
+                                                       └─────────────────┘
 ```
 
-### File: `src/stores/authStore.ts` — Fix the deadlock
-- Change `onAuthStateChange` to use fire-and-forget pattern (no `await` in the callback)
-- Move the RPC call outside the callback chain: resolve auth state immediately with a default role, then fetch the role separately and update state
-- Add a retry with 1s delay if the RPC fails on first attempt
+The agent on the VPS exposes new endpoints. The panel's edge functions proxy to them.
 
-```typescript
-// Inside onAuthStateChange — fire and forget, no await
-supabase.auth.onAuthStateChange((_event, session) => {
-  if (session?.user) {
-    // Set authenticated immediately with default role
-    set({ user: { id: session.user.id, email: session.user.email || '', role: 'viewer' }, isAuthenticated: true, isLoading: false });
-    // Then fetch real role in background (non-blocking)
-    supabase.rpc('get_user_role', { _user_id: session.user.id })
-      .then(({ data }) => {
-        if (data) set(s => ({ user: s.user ? { ...s.user, role: data } : s.user }));
-      });
-  } else {
-    set({ user: null, isAuthenticated: false, isLoading: false });
-  }
-});
-```
+## Changes
 
-### Security Fixes (from scan findings)
+### 1. New Edge Function: `server-files`
 
-**1. Profiles email exposure** — Create a view `profiles_public` that excludes email, restrict base table SELECT to own row only:
-```sql
--- New RLS: users can only SELECT own profile
-DROP POLICY "Users can view all profiles" ON profiles;
-CREATE POLICY "Users can view own profile" ON profiles FOR SELECT USING (id = auth.uid());
--- Admins can view all
-CREATE POLICY "Admins can view all profiles" ON profiles FOR SELECT USING (has_role(auth.uid(), 'admin'));
-```
+Proxies file operations to the agent's `/files` endpoint.
 
-**2. Audit log INSERT** — Remove client-side INSERT policy. Audit entries should only be written by service-role (edge functions):
-```sql
-DROP POLICY "Users can insert own audit entries" ON audit_log;
-```
+**Endpoints the agent must implement** (documented in wizard):
+- `GET /files?path=/etc/armagetronad` — list directory
+- `GET /files/read?path=/etc/armagetronad/settings_custom.cfg` — read file content
+- `POST /files/write` — write/create file `{path, content}`
+- `POST /files/rename` — rename `{oldPath, newPath}`
+- `POST /files/delete` — delete `{path}`
+- `POST /files/upload` — multipart file upload `{path, file}`
+- `POST /files/mkdir` — create directory `{path}`
 
-**3. Enable leaked password protection** — Use `configure_auth` tool to enable HIBP check.
+**File: `supabase/functions/server-files/index.ts`**
+- Auth + role check (admin/moderator)
+- Lookup server's `agent_url`
+- Proxy the request to agent
+- SSRF validation (same as existing)
+- Path traversal protection: reject paths containing `..`, null bytes
 
-### Files Modified
+### 2. New Tab: `FilesTab` (Server Detail)
 
-| File | Change |
+**File: `src/components/tabs/FilesTab.tsx`**
+- Tree-based file browser showing directories and files from the VPS
+- Breadcrumb navigation (click path segments)
+- File actions: view/edit (opens in a code editor textarea), rename (inline), delete (with confirm), create new file/folder
+- Upload button (drag-and-drop or click)
+- Syntax highlighting hint via file extension
+- Calls new API functions in `supabaseApi.ts`
+
+### 3. Expanded Agent Wizard (`AgentWizardPage.tsx`)
+
+Transform from a simple script generator into a multi-section hub:
+
+**Section 1: Registered Hosts** (new)
+- List all servers grouped by agent_url
+- Show connection status per host (green/red dot)
+- "Test All" button to ping each agent
+- Quick link to each server's detail page
+
+**Section 2: Host Setup** (existing, enhanced)
+- Keep current script generator
+- Add "Connect to Existing Agent" flow — enter agent URL, test it, then link to a server
+- Add localhost preset button: fills in `127.0.0.1` and port `8080`
+- Add Docker Compose snippet option alongside bash script
+
+**Section 3: Agent API Reference** (moved from Settings)
+- Full agent API spec with all endpoints including new `/files` and `/launch`
+- Move the API spec from SettingsPage into AgentWizard
+
+**Section 4: Binary Management**
+- Keep existing binary test buttons
+- Add upload binary button (upload to `binaries` storage bucket from the panel)
+
+### 4. Server Creation Triggers Launch
+
+**File: `supabase/functions/server-control/index.ts`**
+- Add new action: `launch` — tells agent to create and start a brand new server instance
+- Payload: `{ action: 'launch', serverId, config: { executable_path, data_dir, config_dir, port, max_players } }`
+- Agent creates directories, writes initial config, starts the process
+
+**File: `src/components/server/CreateServerModal.tsx`**
+- After creating the DB record, if `agent_url` is set, automatically call `serverAction(id, 'launch')` to tell the agent to spin up the dedicated server
+- Show progress indicator during launch
+- If launch fails, show error but keep the DB record (can retry from Overview)
+
+**File: `src/lib/supabaseApi.ts`**
+- Add `launchServer(serverId)` — calls server-control with action `launch`
+- Add file manager functions:
+  - `listFiles(serverId, path)`
+  - `readFile(serverId, path)`
+  - `writeFile(serverId, path, content)`
+  - `renameFile(serverId, oldPath, newPath)`
+  - `deleteFile(serverId, path)`
+  - `uploadFile(serverId, path, file)`
+  - `createDirectory(serverId, path)`
+
+### 5. SSRF: Allow localhost
+
+**Files: `server-control/index.ts`, `server-status/index.ts`, `server-files/index.ts`**
+- Current `validateAgentUrl` blocks only `169.254.169.254` — localhost and private IPs are already allowed
+- No change needed, localhost works
+
+### 6. Route & Navigation Updates
+
+**File: `src/App.tsx`**
+- No new routes needed — FilesTab lives inside ServerDetailPage
+
+**File: `src/pages/ServerDetailPage.tsx`**
+- Add "Files" tab between "Maps" and existing tabs
+
+**File: `src/pages/SettingsPage.tsx`**
+- Remove the "Agent API Spec" section (moved to Agent Wizard)
+- Keep the "Open Agent Setup Wizard" button
+
+### 7. Server-Control: Add `launch` Action
+
+**File: `supabase/functions/server-control/index.ts`**
+- Add `'launch'` to `validActions` array
+- In `proxyToAgent`: forward `launch` with server config payload
+- In `simulateAction`: for `launch`, set status to `starting` then `online` (same as `start` but includes config payload)
+
+## File Summary
+
+| File | Action |
 |------|--------|
-| `src/stores/authStore.ts` | Fix `onAuthStateChange` deadlock — fire-and-forget pattern, non-blocking role fetch |
-| DB migration (new) | Re-create trigger safely, fix publication adds |
-| DB migration (security) | Tighten profiles SELECT, remove audit_log client INSERT |
-| Auth config | Enable HIBP leaked password protection |
+| `supabase/functions/server-files/index.ts` | Create — file operations proxy |
+| `supabase/functions/server-control/index.ts` | Edit — add `launch` action |
+| `src/components/tabs/FilesTab.tsx` | Create — remote file browser |
+| `src/pages/ServerDetailPage.tsx` | Edit — add Files tab |
+| `src/pages/AgentWizardPage.tsx` | Rewrite — multi-section host hub |
+| `src/pages/SettingsPage.tsx` | Edit — remove API spec section |
+| `src/components/server/CreateServerModal.tsx` | Edit — auto-launch on create |
+| `src/lib/supabaseApi.ts` | Edit — add file + launch functions |
 
-### What This Fixes
-- **Blank page on publish**: Auth initializes immediately without blocking on RPC
-- **New user registration**: Trigger auto-assigns roles so RLS works from first login
-- **Security findings**: Profiles email no longer globally readable, audit log no longer writable by clients
-
-No new pages or edge functions needed. 1 store file + 2 migrations + 1 auth config change.
+No database migrations needed. No new tables. The file manager operates entirely through the agent proxy — no VPS files touch the database.
 
