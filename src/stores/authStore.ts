@@ -12,43 +12,68 @@ interface AuthStore {
   initialize: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthStore>()((set, get) => ({
+const fetchRole = async (userId: string, set: any) => {
+  try {
+    const { data } = await supabase.rpc('get_user_role', { _user_id: userId });
+    if (data) {
+      set((s: any) => ({
+        user: s.user ? { ...s.user, role: data as UserRole } : s.user,
+      }));
+    }
+  } catch {
+    // Retry once after 1s
+    setTimeout(async () => {
+      try {
+        const { data } = await supabase.rpc('get_user_role', { _user_id: userId });
+        if (data) {
+          set((s: any) => ({
+            user: s.user ? { ...s.user, role: data as UserRole } : s.user,
+          }));
+        }
+      } catch {}
+    }, 1000);
+  }
+};
+
+export const useAuthStore = create<AuthStore>()((set) => ({
   user: null,
   isAuthenticated: false,
   isLoading: true,
 
   initialize: async () => {
-    const resolveSession = async (session: any) => {
+    // Set up listener FIRST — fire-and-forget, NO await inside callback
+    supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
-        let role: UserRole = 'viewer';
-        try {
-          const { data } = await supabase.rpc('get_user_role', { _user_id: session.user.id });
-          if (data) role = data as UserRole;
-        } catch {}
+        // Set authenticated immediately with default role
         set({
-          user: { id: session.user.id, email: session.user.email || '', role },
+          user: { id: session.user.id, email: session.user.email || '', role: 'viewer' },
           isAuthenticated: true,
           isLoading: false,
         });
+        // Fetch real role in background (non-blocking)
+        fetchRole(session.user.id, set);
       } else {
         set({ user: null, isAuthenticated: false, isLoading: false });
       }
-    };
-
-    // Set up listener FIRST for subsequent changes
-    supabase.auth.onAuthStateChange((_event, session) => {
-      resolveSession(session);
     });
 
-    // Then resolve initial state immediately
+    // Resolve initial state
     const { data: { session } } = await supabase.auth.getSession();
-    await resolveSession(session);
+    if (session?.user) {
+      set({
+        user: { id: session.user.id, email: session.user.email || '', role: 'viewer' },
+        isAuthenticated: true,
+        isLoading: false,
+      });
+      fetchRole(session.user.id, set);
+    } else {
+      set({ user: null, isAuthenticated: false, isLoading: false });
+    }
   },
 
   login: async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
-    // Auth state change listener handles the rest
   },
 
   register: async (email, password) => {
