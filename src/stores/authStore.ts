@@ -12,29 +12,27 @@ interface AuthStore {
   initialize: () => Promise<void>;
 }
 
-const fetchRole = (userId: string, set: any) => {
-  supabase.rpc('get_user_role', { _user_id: userId })
-    .then(({ data }) => {
-      if (data) {
-        set((s: any) => ({
-          user: s.user ? { ...s.user, role: data as UserRole } : s.user,
-        }));
-      }
-    })
-    .catch(() => {
-      // Retry once after 1s
-      setTimeout(() => {
-        supabase.rpc('get_user_role', { _user_id: userId })
-          .then(({ data }) => {
-            if (data) {
-              set((s: any) => ({
-                user: s.user ? { ...s.user, role: data as UserRole } : s.user,
-              }));
-            }
-          })
-          .catch(() => {});
-      }, 1000);
-    });
+const fetchRole = async (userId: string, set: any) => {
+  try {
+    const { data } = await supabase.rpc('get_user_role', { _user_id: userId });
+    if (data) {
+      set((s: any) => ({
+        user: s.user ? { ...s.user, role: data as UserRole } : s.user,
+      }));
+    }
+  } catch {
+    // Retry once after 1s
+    setTimeout(async () => {
+      try {
+        const { data } = await supabase.rpc('get_user_role', { _user_id: userId });
+        if (data) {
+          set((s: any) => ({
+            user: s.user ? { ...s.user, role: data as UserRole } : s.user,
+          }));
+        }
+      } catch {}
+    }, 1000);
+  }
 };
 
 export const useAuthStore = create<AuthStore>()((set) => ({
