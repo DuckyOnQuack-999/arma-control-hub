@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getUserRoles, changeUserRole, deleteUserRole, getProfiles, getAuditLog, changePassword, updateProfile, getBinaryDownloadUrl } from '@/lib/supabaseApi';
+import { getUserRoles, changeUserRole, deleteUserRole, getProfiles, getAuditLog, changePassword, updateProfile } from '@/lib/supabaseApi';
 import { useAuthStore } from '@/stores/authStore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
-import { Trash2, Key, Shield, Clock, Info, Download, Server, ExternalLink } from 'lucide-react';
+import { Trash2, Key, Shield, Clock, Info, Server, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from '@/hooks/use-toast';
