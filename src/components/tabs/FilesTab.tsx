@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { listFiles, readFile, writeFile, renameFile, deleteFile, createDirectory } from '@/lib/supabaseApi';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import {
-  Folder, File, ChevronRight, ArrowLeft, Plus, Save, X,
+  Folder, File, ChevronRight, ArrowLeft, Save, X,
   Edit2, Trash2, FolderPlus, FilePlus, RefreshCw, Home
 } from 'lucide-react';
 
@@ -24,7 +24,6 @@ interface Props {
 }
 
 const FilesTab = ({ serverId, agentUrl }: Props) => {
-  const queryClient = useQueryClient();
   const [currentPath, setCurrentPath] = useState('/');
   const [editingFile, setEditingFile] = useState<{ path: string; content: string } | null>(null);
   const [editContent, setEditContent] = useState('');
@@ -132,7 +131,6 @@ const FilesTab = ({ serverId, agentUrl }: Props) => {
   }
 
   if (editingFile) {
-    const fileName = editingFile.path.split('/').pop() || editingFile.path;
     const hasChanges = editContent !== editingFile.content;
     return (
       <div className="space-y-3">
