@@ -169,53 +169,15 @@ const SettingsPage = () => {
       {isAdmin && (
         <Card className="border-border bg-card">
           <CardHeader>
-            <CardTitle className="font-display text-sm flex items-center gap-2"><Server className="h-4 w-4" /> Host Agent Setup</CardTitle>
+            <CardTitle className="font-display text-sm flex items-center gap-2"><Server className="h-4 w-4" /> Host Agent</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <Alert className="border-primary/30 bg-primary/5">
-              <Info className="h-4 w-4 text-primary" />
-              <AlertDescription className="text-xs text-muted-foreground">
-                To control real Armagetron servers, run a <strong>host agent</strong> on each machine hosting game servers. The agent manages the <code className="text-primary">armagetronad-dedicated</code> process and responds to commands from this panel.
-              </AlertDescription>
-            </Alert>
-            <div className="space-y-2">
-              <Label className="text-xs font-display">1. Download Binaries</Label>
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" className="text-xs" onClick={() => window.open(getBinaryDownloadUrl('armagetronad-dedicated'), '_blank')}>
-                  <Download className="h-3 w-3 mr-1" /> armagetronad-dedicated
-                </Button>
-                <Button size="sm" variant="outline" className="text-xs" onClick={() => window.open(getBinaryDownloadUrl('armagetronad-serverquery'), '_blank')}>
-                  <Download className="h-3 w-3 mr-1" /> armagetronad-serverquery
-                </Button>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs font-display">2. Setup Agent</Label>
-              <div className="rounded-md bg-muted p-3 font-mono text-[11px] text-muted-foreground space-y-1">
-                <p># Place binaries on your game server host:</p>
-                <p>chmod +x armagetronad-dedicated armagetronad-serverquery</p>
-                <p>mv armagetronad-* /usr/local/bin/</p>
-                <p className="pt-2"># Run the agent (Node.js example):</p>
-                <p>npx retrocycles-agent --port 8080</p>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs font-display">3. Connect</Label>
-              <p className="text-xs text-muted-foreground">
-                Set the <strong>Agent URL</strong> when creating/editing a server (e.g. <code className="text-primary">http://192.168.1.10:8080</code>). The panel proxies all actions to the agent instead of simulating.
-              </p>
-            </div>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Manage host agents, binaries, and VPS connections from the Agent Hub.
+            </p>
             <Button variant="outline" size="sm" className="text-xs" onClick={() => navigate('/agent-wizard')}>
-              <ExternalLink className="h-3 w-3 mr-1" /> Open Agent Setup Wizard
+              <ExternalLink className="h-3 w-3 mr-1" /> Open Agent Hub
             </Button>
-            <div className="space-y-2">
-              <Label className="text-xs font-display">Agent API Spec</Label>
-              <div className="rounded-md bg-muted p-3 font-mono text-[11px] text-muted-foreground space-y-1">
-                <p>POST /control — {"{"} action, serverId, command? {"}"}</p>
-                <p>POST /status  — {"{"} serverId {"}"}</p>
-                <p>Returns: {"{"} status, player_count, cpu_percent, memory_mb, current_map, uptime {"}"}</p>
-              </div>
-            </div>
           </CardContent>
         </Card>
       )}
