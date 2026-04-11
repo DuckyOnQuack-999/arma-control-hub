@@ -43,7 +43,7 @@ export async function updateServer(id: number, updates: Partial<Server>): Promis
 
 // ─── Server Control (via Edge Function) ────────────────────
 
-export async function serverAction(serverId: number, action: 'start' | 'stop' | 'restart' | 'kill' | 'command', command?: string): Promise<{ success: boolean; message: string; newStatus?: string }> {
+export async function serverAction(serverId: number, action: 'start' | 'stop' | 'restart' | 'kill' | 'command' | 'launch', command?: string): Promise<{ success: boolean; message: string; newStatus?: string }> {
   const { data, error } = await supabase.functions.invoke('server-control', {
     body: { serverId, action, command },
   });
@@ -358,4 +358,66 @@ export async function getConsoleLines(serverId: number, since?: number): Promise
   });
   if (error) throw error;
   return data;
+}
+
+// ─── Server Launch (via Agent) ─────────────────────────────
+
+export async function launchServer(serverId: number): Promise<{ success: boolean; message: string }> {
+  const { data, error } = await supabase.functions.invoke('server-control', {
+    body: { serverId, action: 'launch' },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+// ─── Remote File Manager (via Agent) ───────────────────────
+
+async function fileOperation(serverId: number, operation: string, params: Record<string, unknown> = {}): Promise<any> {
+  const { data, error } = await supabase.functions.invoke('server-files', {
+    body: { serverId, operation, ...params },
+  });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+export async function listFiles(serverId: number, path: string): Promise<Array<{ name: string; type: 'file' | 'directory'; size?: number; modified?: string }>> {
+  const result = await fileOperation(serverId, 'list', { path });
+  return result.files ?? result ?? [];
+}
+
+export async function readFile(serverId: number, path: string): Promise<{ content: string }> {
+  return await fileOperation(serverId, 'read', { path });
+}
+
+export async function writeFile(serverId: number, path: string, content: string): Promise<void> {
+  await fileOperation(serverId, 'write', { path, content });
+}
+
+export async function renameFile(serverId: number, oldPath: string, newPath: string): Promise<void> {
+  await fileOperation(serverId, 'rename', { oldPath, newPath });
+}
+
+export async function deleteFile(serverId: number, path: string): Promise<void> {
+  await fileOperation(serverId, 'delete', { path });
+}
+
+export async function uploadFile(serverId: number, path: string, content: string): Promise<void> {
+  await fileOperation(serverId, 'upload', { path, content });
+}
+
+export async function createDirectory(serverId: number, path: string): Promise<void> {
+  await fileOperation(serverId, 'mkdir', { path });
+}
+
+// ─── Test Agent Connection ─────────────────────────────────
+
+export async function testAgentConnection(serverId: number): Promise<{ reachable: boolean; version?: string; message?: string }> {
+  try {
+    const data = await pollServerStatus(serverId);
+    return { reachable: true, version: data?.agent_version, message: 'Agent is responding' };
+  } catch {
+    return { reachable: false, message: 'Agent unreachable' };
+  }
 }

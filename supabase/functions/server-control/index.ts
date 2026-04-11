@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const validActions = ['start', 'stop', 'restart', 'kill', 'command'];
+    const validActions = ['start', 'stop', 'restart', 'kill', 'command', 'launch'];
     if (!validActions.includes(action)) {
       return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
     }
 
     const { data: server, error: serverErr } = await supabase
-      .from('servers').select('id, name, status, executable_path, config_dir, data_dir, port, agent_url').eq('id', serverId).maybeSingle();
+      .from('servers').select('id, name, status, executable_path, config_dir, data_dir, port, max_players, agent_url').eq('id', serverId).maybeSingle();
     if (serverErr || !server) {
       return new Response(JSON.stringify({ error: 'Server not found' }), {
         status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -113,6 +113,15 @@ async function proxyToAgent(
   const agentUrl = server.agent_url.replace(/\/$/, '');
   const payload: Record<string, unknown> = { action, serverId: server.id };
   if (command) payload.command = command;
+  if (action === 'launch') {
+    payload.config = {
+      executable_path: server.executable_path,
+      data_dir: server.data_dir,
+      config_dir: server.config_dir,
+      port: server.port,
+      max_players: server.max_players,
+    };
+  }
 
   try {
     const agentResp = await fetch(`${agentUrl}/control`, {
@@ -226,6 +235,17 @@ async function simulateAction(
       }
       eventType = 'command';
       payload.command = command;
+      break;
+
+    case 'launch':
+      await supabase.from('servers').update({ status: 'starting' }).eq('id', server.id);
+      await supabase.from('servers').update({ status: 'online', uptime: 0 }).eq('id', server.id);
+      newStatus = 'online';
+      payload.executable = server.executable_path;
+      payload.config_dir = server.config_dir;
+      payload.data_dir = server.data_dir;
+      payload.port = server.port;
+      payload.max_players = server.max_players;
       break;
 
     default:

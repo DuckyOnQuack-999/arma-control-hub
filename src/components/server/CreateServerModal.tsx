@@ -4,9 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { createServer } from '@/lib/supabaseApi';
+import { createServer, launchServer } from '@/lib/supabaseApi';
 import { toast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 
 interface Props {
   open: boolean;
@@ -27,6 +28,7 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
     agent_url: '',
   });
   const [loading, setLoading] = useState(false);
+  const [launching, setLaunching] = useState(false);
 
   const handleSubmit = async () => {
     if (!form.name.trim() || form.name.length < 3) {
@@ -35,15 +37,32 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
     }
     setLoading(true);
     try {
-      await createServer(form);
+      const server = await createServer(form);
       toast({ title: 'Server created', description: `${form.name} has been added` });
-      if (!form.agent_url) {
+
+      // Auto-launch if agent is configured
+      if (form.agent_url) {
+        setLaunching(true);
+        try {
+          const result = await launchServer(server.id);
+          toast({ title: 'Server launched', description: result.message });
+        } catch (err: any) {
+          toast({
+            title: 'Launch failed',
+            description: `Server created but launch failed: ${err?.message}. You can retry from the Overview tab.`,
+            variant: 'destructive',
+          });
+        } finally {
+          setLaunching(false);
+        }
+      } else {
         toast({
           title: 'No agent configured',
           description: 'Set up a host agent for real server control',
           action: <Button size="sm" variant="outline" className="text-xs" onClick={() => navigate('/agent-wizard')}>Setup Agent</Button>,
         });
       }
+
       onCreated();
       onClose();
       setForm({ name: '', executable_path: '/usr/bin/armagetronad-dedicated', data_dir: '/usr/share/armagetronad', config_dir: '/etc/armagetronad/new', port: 4534, max_players: 16, auto_restart: true, agent_url: '' });
@@ -54,8 +73,10 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
     }
   };
 
+  const isWorking = loading || launching;
+
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={open} onOpenChange={(o) => !o && !isWorking && onClose()}>
       <DialogContent className="border-border bg-card sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="font-display">Add Server</DialogTitle>
@@ -95,13 +116,25 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
           </div>
           <div className="grid gap-1.5">
             <Label>Agent URL <span className="text-xs text-muted-foreground">(optional)</span></Label>
-            <Input value={form.agent_url} onChange={e => setForm(f => ({ ...f, agent_url: e.target.value }))} placeholder="http://192.168.1.10:8080" className="font-mono text-xs" />
-            <p className="text-[10px] text-muted-foreground">HTTP endpoint of the host agent managing this server. Leave empty for simulation mode.</p>
+            <div className="flex gap-2">
+              <Input value={form.agent_url} onChange={e => setForm(f => ({ ...f, agent_url: e.target.value }))} placeholder="http://192.168.1.10:8080" className="font-mono text-xs flex-1" />
+              <Button type="button" variant="outline" size="sm" className="text-xs shrink-0" onClick={() => setForm(f => ({ ...f, agent_url: 'http://127.0.0.1:8080' }))}>
+                Localhost
+              </Button>
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              HTTP endpoint of the host agent. Leave empty for simulation mode.
+              {form.agent_url && ' Server will be auto-launched on the agent after creation.'}
+            </p>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={loading}>Create Server</Button>
+          <Button variant="ghost" onClick={onClose} disabled={isWorking}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={isWorking}>
+            {launching ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Launching…</> :
+             loading ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Creating…</> :
+             form.agent_url ? 'Create & Launch' : 'Create Server'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
