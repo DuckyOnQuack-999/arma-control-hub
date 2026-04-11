@@ -15,6 +15,7 @@ import MetricsTab from '@/components/tabs/MetricsTab';
 import ConfigTab from '@/components/tabs/ConfigTab';
 import OverviewTab from '@/components/tabs/OverviewTab';
 import MapsTab from '@/components/tabs/MapsTab';
+import FilesTab from '@/components/tabs/FilesTab';
 import { Users, Cpu, HardDrive, Clock, Wifi, Monitor } from 'lucide-react';
 import type { ServerStatus } from '@/data/types';
 
@@ -113,11 +114,12 @@ const ServerDetailPage = () => {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="bg-muted border border-border">
+        <TabsList className="bg-muted border border-border flex-wrap">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="console">Console</TabsTrigger>
           <TabsTrigger value="config">Config</TabsTrigger>
           <TabsTrigger value="players">Players</TabsTrigger>
+          <TabsTrigger value="files">Files</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
           <TabsTrigger value="metrics">Metrics</TabsTrigger>
           <TabsTrigger value="maps">Maps</TabsTrigger>
@@ -126,6 +128,7 @@ const ServerDetailPage = () => {
         <TabsContent value="console"><ConsoleTab serverId={serverId} agentUrl={server.agent_url} /></TabsContent>
         <TabsContent value="config"><ConfigTab serverId={serverId} serverStatus={server.status as ServerStatus} /></TabsContent>
         <TabsContent value="players"><PlayersTab serverId={serverId} /></TabsContent>
+        <TabsContent value="files"><FilesTab serverId={serverId} agentUrl={server.agent_url} /></TabsContent>
         <TabsContent value="logs"><LogsTab serverId={serverId} /></TabsContent>
         <TabsContent value="metrics"><MetricsTab serverId={serverId} /></TabsContent>
         <TabsContent value="maps"><MapsTab serverId={serverId} /></TabsContent>
