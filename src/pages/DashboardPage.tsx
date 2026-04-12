@@ -50,11 +50,11 @@ const DashboardPage = () => {
   }, [refetch]);
 
   const onlineCount = servers.filter(s => s.status === 'online').length;
-  const totalPlayers = servers.reduce((sum, s) => sum + s.player_count, 0);
-  const avgCpu = servers.length > 0 ? servers.reduce((sum, s) => sum + s.cpu_percent, 0) / servers.length : 0;
-  const totalMemory = servers.reduce((sum, s) => sum + s.memory_mb, 0);
+  const totalPlayers = servers.reduce((sum, s) => sum + (s.player_count ?? 0), 0);
+  const avgCpu = servers.length > 0 ? servers.reduce((sum, s) => sum + (s.cpu_percent ?? 0), 0) / servers.length : 0;
+  const totalMemory = servers.reduce((sum, s) => sum + (s.memory_mb ?? 0), 0);
   const agentCount = servers.filter(s => s.agent_url).length;
-  const totalUptime = servers.reduce((sum, s) => sum + s.uptime, 0);
+  const totalUptime = servers.reduce((sum, s) => sum + (s.uptime ?? 0), 0);
 
   const formatUptime = (s: number) => {
     const d = Math.floor(s / 86400); const h = Math.floor((s % 86400) / 3600);
@@ -193,8 +193,8 @@ const DashboardPage = () => {
 
       {/* Quick Actions */}
       <div className="flex gap-2 flex-wrap">
-        <Button variant="outline" size="sm" className="text-xs" onClick={() => navigate('/agent-wizard')}>
-          <Wand2 className="h-3 w-3 mr-1" /> Agent Wizard
+        <Button variant="outline" size="sm" className="text-xs" onClick={() => navigate('/host-settings')}>
+          <Wand2 className="h-3 w-3 mr-1" /> Host Settings
         </Button>
         <Button variant="outline" size="sm" className="text-xs" onClick={() => navigate('/browser')}>
           <Globe className="h-3 w-3 mr-1" /> Server Browser

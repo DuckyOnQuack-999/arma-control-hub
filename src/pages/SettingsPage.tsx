@@ -175,8 +175,8 @@ const SettingsPage = () => {
             <p className="text-xs text-muted-foreground">
               Manage host agents, binaries, and VPS connections from the Agent Hub.
             </p>
-            <Button variant="outline" size="sm" className="text-xs" onClick={() => navigate('/agent-wizard')}>
-              <ExternalLink className="h-3 w-3 mr-1" /> Open Agent Hub
+            <Button variant="outline" size="sm" className="text-xs" onClick={() => navigate('/host-settings')}>
+              <ExternalLink className="h-3 w-3 mr-1" /> Open Host Settings
             </Button>
           </CardContent>
         </Card>

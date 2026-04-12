@@ -13,7 +13,7 @@ import DashboardPage from "./pages/DashboardPage";
 import ServerDetailPage from "./pages/ServerDetailPage";
 import ServerBrowserPage from "./pages/ServerBrowserPage";
 import SettingsPage from "./pages/SettingsPage";
-import AgentWizardPage from "./pages/AgentWizardPage";
+import HostSettingsPage from "./pages/HostSettingsPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import NotFound from "./pages/NotFound";
 
@@ -57,7 +57,7 @@ const App = () => (
                 <Route path="/servers/:id" element={<ServerDetailPage />} />
                 <Route path="/browser" element={<ServerBrowserPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
-                <Route path="/agent-wizard" element={<AgentWizardPage />} />
+                <Route path="/host-settings" element={<HostSettingsPage />} />
               </Route>
               <Route path="*" element={<NotFound />} />
             </Routes>

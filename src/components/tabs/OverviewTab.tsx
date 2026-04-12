@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Server, ServerStatus } from '@/data/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ServerStatusBadge } from '@/components/server/ServerStatusBadge';
-import { Map, Clock, Users, Cpu, HardDrive, Wifi, WifiOff, Save, ExternalLink, FolderOpen, Terminal, Settings, Shield, Zap } from 'lucide-react';
+import { Map, Clock, Users, Cpu, HardDrive, Wifi, WifiOff, Save, ExternalLink, FolderOpen, Terminal, Settings, Shield, Zap, Edit2, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { updateServer, pollServerStatus } from '@/lib/supabaseApi';
@@ -17,6 +17,10 @@ export default function OverviewTab({ server, onTabChange }: { server: Server; o
   const [agentUrl, setAgentUrl] = useState(server.agent_url || '');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+
+  // Inline path editing
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
 
   const formatUptime = (s: number) => {
     const d = Math.floor(s / 86400); const h = Math.floor((s % 86400) / 3600); const m = Math.floor((s % 3600) / 60);
@@ -51,6 +55,57 @@ export default function OverviewTab({ server, onTabChange }: { server: Server; o
     }
   };
 
+  const startEditField = (field: string, currentValue: string) => {
+    setEditingField(field);
+    setEditValue(currentValue);
+  };
+
+  const saveField = async () => {
+    if (!editingField || !editValue.trim()) return;
+    setSaving(true);
+    try {
+      await updateServer(server.id, { [editingField]: editValue });
+      toast({ title: `${editingField.replace(/_/g, ' ')} updated` });
+      setEditingField(null);
+    } catch (err: any) {
+      toast({ title: 'Failed', description: err?.message, variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const editablePathRow = (label: string, field: string, value: string, icon: React.ReactNode) => (
+    <div className="flex justify-between items-center">
+      <span className="flex items-center gap-1.5 text-muted-foreground">{icon} {label}</span>
+      {editingField === field ? (
+        <div className="flex items-center gap-1 max-w-64">
+          <Input
+            value={editValue}
+            onChange={e => setEditValue(e.target.value)}
+            className="h-6 text-xs font-mono"
+            autoFocus
+            onKeyDown={e => { if (e.key === 'Enter') saveField(); if (e.key === 'Escape') setEditingField(null); }}
+          />
+          <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={saveField} disabled={saving}>
+            <Save className="h-3 w-3" />
+          </Button>
+          <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => setEditingField(null)}>
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1">
+          <span className="font-mono text-xs truncate max-w-48">{value}</span>
+          {isAdmin && (
+            <Button size="icon" variant="ghost" className="h-5 w-5 shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity" onClick={() => startEditField(field, value)}>
+              <Edit2 className="h-3 w-3" />
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Card className="border-border bg-card">
@@ -59,14 +114,14 @@ export default function OverviewTab({ server, onTabChange }: { server: Server; o
           <div className="flex justify-between"><span className="text-muted-foreground">Status</span><ServerStatusBadge status={server.status as ServerStatus} /></div>
           <div className="flex justify-between"><span className="text-muted-foreground">Port</span><span className="font-mono">{server.port}</span></div>
           <div className="flex justify-between"><span className="text-muted-foreground">Auto Restart</span><span>{server.auto_restart ? 'Enabled' : 'Disabled'}</span></div>
-          <div className="flex justify-between"><span className="text-muted-foreground">Executable</span><span className="font-mono text-xs truncate max-w-48">{server.executable_path}</span></div>
-          <div className="flex justify-between items-center">
-            <span className="flex items-center gap-1.5 text-muted-foreground"><FolderOpen className="h-3.5 w-3.5" /> Data Dir</span>
-            <span className="font-mono text-xs truncate max-w-48">{server.data_dir}</span>
+          <div className="group/row">
+            {editablePathRow('Executable', 'executable_path', server.executable_path, null)}
           </div>
-          <div className="flex justify-between items-center">
-            <span className="flex items-center gap-1.5 text-muted-foreground"><FolderOpen className="h-3.5 w-3.5" /> Config Dir</span>
-            <span className="font-mono text-xs truncate max-w-48">{server.config_dir}</span>
+          <div className="group/row">
+            {editablePathRow('Data Dir', 'data_dir', server.data_dir, <FolderOpen className="h-3.5 w-3.5" />)}
+          </div>
+          <div className="group/row">
+            {editablePathRow('Config Dir', 'config_dir', server.config_dir, <FolderOpen className="h-3.5 w-3.5" />)}
           </div>
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-muted-foreground">
@@ -94,8 +149,8 @@ export default function OverviewTab({ server, onTabChange }: { server: Server; o
                 <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleTestAgent} disabled={testing || !server.agent_url}>
                   <Zap className="h-3 w-3 mr-1" /> {testing ? 'Testing…' : 'Test Connection'}
                 </Button>
-                <Button size="sm" variant="link" className="h-auto p-0 text-xs text-primary" onClick={() => navigate('/agent-wizard')}>
-                  <ExternalLink className="h-3 w-3 mr-1" /> Agent Setup Wizard
+                <Button size="sm" variant="link" className="h-auto p-0 text-xs text-primary" onClick={() => navigate('/host-settings')}>
+                  <ExternalLink className="h-3 w-3 mr-1" /> Host Settings
                 </Button>
               </div>
             </div>
@@ -113,24 +168,23 @@ export default function OverviewTab({ server, onTabChange }: { server: Server; o
             </div>
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-muted-foreground"><Clock className="h-3.5 w-3.5" /> Uptime</span>
-              <span>{server.uptime > 0 ? formatUptime(server.uptime) : 'N/A'}</span>
+              <span>{(server.uptime ?? 0) > 0 ? formatUptime(server.uptime ?? 0) : 'N/A'}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-muted-foreground"><Users className="h-3.5 w-3.5" /> Players</span>
-              <span>{server.player_count} / {server.max_players}</span>
+              <span>{server.player_count ?? 0} / {server.max_players}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-muted-foreground"><Cpu className="h-3.5 w-3.5" /> CPU</span>
-              <span>{server.cpu_percent.toFixed(1)}%</span>
+              <span>{(server.cpu_percent ?? 0).toFixed(1)}%</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-muted-foreground"><HardDrive className="h-3.5 w-3.5" /> Memory</span>
-              <span>{server.memory_mb.toFixed(0)} MB</span>
+              <span>{(server.memory_mb ?? 0).toFixed(0)} MB</span>
             </div>
           </CardContent>
         </Card>
 
-        {/* Quick Actions */}
         <Card className="border-border bg-card">
           <CardHeader><CardTitle className="font-display text-sm">Quick Actions</CardTitle></CardHeader>
           <CardContent className="flex flex-wrap gap-2">

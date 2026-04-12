@@ -98,9 +98,9 @@ const ServerDetailPage = () => {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
             { icon: Users, label: 'Players', value: `${server.player_count} / ${server.max_players}`, color: 'text-primary' },
-            { icon: Cpu, label: 'CPU', value: `${server.cpu_percent.toFixed(1)}%`, color: 'text-neon-red' },
-            { icon: HardDrive, label: 'Memory', value: `${server.memory_mb.toFixed(0)} MB`, color: 'text-neon-blue' },
-            { icon: Clock, label: 'Uptime', value: formatUptime(server.uptime), color: 'text-neon-green' },
+            { icon: Cpu, label: 'CPU', value: `${(server.cpu_percent ?? 0).toFixed(1)}%`, color: 'text-neon-red' },
+            { icon: HardDrive, label: 'Memory', value: `${(server.memory_mb ?? 0).toFixed(0)} MB`, color: 'text-neon-blue' },
+            { icon: Clock, label: 'Uptime', value: formatUptime(server.uptime ?? 0), color: 'text-neon-green' },
           ].map(stat => (
             <div key={stat.label} className="rounded-lg border border-border bg-card p-3">
               <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
