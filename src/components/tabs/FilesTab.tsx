@@ -305,10 +305,11 @@ const FilesTab = ({ serverId, agentUrl }: Props) => {
 
       <ConfirmDialog
         open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
         title="Delete File"
         description={`Are you sure you want to delete "${deleteTarget}"? This cannot be undone.`}
+        destructive
         onConfirm={handleDelete}
-        onCancel={() => setDeleteTarget(null)}
       />
     </div>
   );

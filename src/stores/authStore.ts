@@ -12,6 +12,8 @@ interface AuthStore {
   initialize: () => Promise<void>;
 }
 
+let authSubscription: { unsubscribe: () => void } | null = null;
+
 const fetchRole = async (userId: string, set: any) => {
   try {
     const { data } = await supabase.rpc('get_user_role', { _user_id: userId });
@@ -21,7 +23,6 @@ const fetchRole = async (userId: string, set: any) => {
       }));
     }
   } catch {
-    // Retry once after 1s
     setTimeout(async () => {
       try {
         const { data } = await supabase.rpc('get_user_role', { _user_id: userId });
@@ -41,32 +42,49 @@ export const useAuthStore = create<AuthStore>()((set) => ({
   isLoading: true,
 
   initialize: async () => {
-    // Set up listener FIRST — fire-and-forget, NO await inside callback
-    supabase.auth.onAuthStateChange((_event, session) => {
+    // Unsubscribe previous listener to prevent double-subscription
+    if (authSubscription) {
+      authSubscription.unsubscribe();
+      authSubscription = null;
+    }
+
+    // Set up listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // Skip role fetch on sign-out or token refresh
+      if (event === 'SIGNED_OUT') {
+        set({ user: null, isAuthenticated: false, isLoading: false });
+        return;
+      }
+      if (event === 'TOKEN_REFRESHED') return;
+
       if (session?.user) {
-        // Set authenticated immediately with default role
         set({
           user: { id: session.user.id, email: session.user.email || '', role: 'viewer' },
           isAuthenticated: true,
           isLoading: false,
         });
-        // Fetch real role in background (non-blocking)
         fetchRole(session.user.id, set);
       } else {
         set({ user: null, isAuthenticated: false, isLoading: false });
       }
     });
+    authSubscription = subscription;
 
-    // Resolve initial state
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      set({
-        user: { id: session.user.id, email: session.user.email || '', role: 'viewer' },
-        isAuthenticated: true,
-        isLoading: false,
-      });
-      fetchRole(session.user.id, set);
-    } else {
+    // Resolve initial state with error handling
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        set({
+          user: { id: session.user.id, email: session.user.email || '', role: 'viewer' },
+          isAuthenticated: true,
+          isLoading: false,
+        });
+        fetchRole(session.user.id, set);
+      } else {
+        set({ user: null, isAuthenticated: false, isLoading: false });
+      }
+    } catch {
+      // On network error, unblock UI
       set({ user: null, isAuthenticated: false, isLoading: false });
     }
   },

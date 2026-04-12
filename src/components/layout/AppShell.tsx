@@ -21,7 +21,7 @@ const baseNavItems = [
 ];
 
 const adminNavItems = [
-  { title: 'Agent Wizard', url: '/agent-wizard', icon: Wand2 },
+  { title: 'Host Settings', url: '/host-settings', icon: Wand2 },
 ];
 
 export function AppShell() {
