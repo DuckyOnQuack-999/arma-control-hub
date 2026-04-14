@@ -5,7 +5,7 @@
 # For format details, see: https://gh.io/customagents/config
 
 name: DuckyCoder
-description:
+description: Auto-detects active tool environment (xAI/Grok · v0 · Cursor) and routes accordingly
 ---
 
 ```xAI
