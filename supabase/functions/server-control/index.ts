@@ -111,6 +111,14 @@ async function proxyToAgent(
   user: any, supabase: any, cors: Record<string, string>
 ) {
   const agentUrl = server.agent_url.replace(/\/$/, '');
+  const agentApiKey = Deno.env.get('RXTRON_API_KEY');
+  
+  if (!agentApiKey) {
+    return new Response(JSON.stringify({ error: 'Agent API key not configured. Set RXTRON_API_KEY in Edge Function secrets.' }), {
+      status: 500, headers: { ...cors, 'Content-Type': 'application/json' },
+    });
+  }
+  
   const payload: Record<string, unknown> = { action, serverId: server.id };
   if (command) payload.command = command;
   if (action === 'launch') {
@@ -126,7 +134,10 @@ async function proxyToAgent(
   try {
     const agentResp = await fetch(`${agentUrl}/control`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-API-Key': agentApiKey,
+      },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(15000),
     });
