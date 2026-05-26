@@ -16,7 +16,7 @@ async function parseJsonSafe(resp: Response): Promise<any> {
     return await resp.json();
   } catch {
     console.error('Failed to parse agent response as JSON');
-    return {};
+    return { error: 'Agent returned invalid JSON' };
   }
 }
 

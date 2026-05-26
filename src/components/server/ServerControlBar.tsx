@@ -20,6 +20,7 @@ export function ServerControlBar({ status, onStart, onStop, onRestart, onKill, l
   const canStart = status === 'offline' || status === 'crashed';
   const isBusy = status === 'starting' || status === 'stopping';
   const canRestart = isRunning || canStart;
+  const canKill = status !== 'offline';
 
   return (
     <div className="flex items-center gap-2">

@@ -43,6 +43,7 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
   const [showSuggestions, setShowSuggestions] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const { commandHistory, historyIndex, addCommand, setHistoryIndex } = useConsoleStore();
 
   const suggestions = useMemo(() => {
@@ -50,6 +51,17 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
     const upper = command.toUpperCase();
     return UNIQUE_COMMANDS.filter(c => c.startsWith(upper)).slice(0, 8);
   }, [command]);
+
+  const handleConsoleInsert = (payload: any) => {
+    const row = payload.new as any;
+    addLine({
+      id: lineIdCounter++,
+      timestamp: new Date(row.timestamp).getTime() / 1000,
+      type: (row.line_type as ConsoleLineType) || 'system',
+      text: row.text || '',
+    });
+    setConnected(true);
+  };
 
   // Load historical console lines from DB
   useEffect(() => {
@@ -80,24 +92,16 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'console_lines',
         filter: `server_id=eq.${serverId}`,
-      }, (payload) => {
-        const row = payload.new as any;
-        addLine({
-          id: lineIdCounter++,
-          timestamp: new Date(row.timestamp).getTime() / 1000,
-          type: (row.line_type as ConsoleLineType) || 'system',
-          text: row.text || '',
-        });
-        setConnected(true);
-      })
+      }, handleConsoleInsert)
       .subscribe((status) => {
         setConnected(status === 'SUBSCRIBED');
       });
 
-    return () => { supabase.removeChannel(channel); };
+    channelRef.current = channel;
+    return () => { supabase.removeChannel(channel); channelRef.current = null; };
   }, [serverId]);
 
-  // Agent console polling (supplemental — for agent-connected servers)
+  // Agent console polling (supplemental for agent-connected servers)
   useEffect(() => {
     if (!agentUrl) return;
     let lastTs = Date.now();
@@ -163,7 +167,7 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') { handleSend(); return; }
+    if (e.key === 'Enter' && connected) { handleSend(); return; }
     if (e.key === 'Tab' && suggestions.length > 0) {
       e.preventDefault();
       setCommand(suggestions[0] + ' ');
@@ -196,25 +200,20 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
 
   const handleReconnect = () => {
     toast({ title: 'Reconnecting...', description: 'Re-subscribing to console stream' });
-    supabase.removeChannel(supabase.channel(`console-${serverId}`));
+    // Remove existing channel
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+    }
     const channel = supabase
       .channel(`console-${serverId}-${Date.now()}`)
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'console_lines',
         filter: `server_id=eq.${serverId}`,
-      }, (payload) => {
-        const row = payload.new as any;
-        addLine({
-          id: lineIdCounter++,
-          timestamp: new Date(row.timestamp).getTime() / 1000,
-          type: (row.line_type as ConsoleLineType) || 'system',
-          text: row.text || '',
-        });
-        setConnected(true);
-      })
+      }, handleConsoleInsert)
       .subscribe((status) => {
         setConnected(status === 'SUBSCRIBED');
       });
+    channelRef.current = channel;
   };
 
   const formatTime = (ts: number) => new Date(ts * 1000).toLocaleTimeString();
@@ -286,8 +285,9 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
             onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
             placeholder="Enter command... (Tab to autocomplete)"
             className="flex-1 border-none bg-transparent font-mono text-sm focus-visible:ring-0 focus-visible:ring-offset-0 h-8"
+            disabled={!connected}
           />
-          <Button size="sm" onClick={handleSend} className="h-8">Send</Button>
+          <Button size="sm" onClick={handleSend} className="h-8" disabled={!connected}>Send</Button>
         </div>
       </div>
     </div>
