@@ -1,6 +1,6 @@
-// Real Supabase API layer — replaces mockApi.ts
+// Supabase API layer — real DB + edge function operations
 import { supabase } from '@/integrations/supabase/client';
-import type { Server, Ban, Player, ServerEvent, MapFile, MetricPoint, BrowserServer } from '@/data/types';
+import type { Server, Ban, Player, ServerEvent, MapFile, MetricPoint, BrowserServer, ConsoleLine } from '@/data/types';
 
 // ─── Servers ─────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ export async function updateServer(id: number, updates: Partial<Server>): Promis
 
 // ─── Server Control (via Edge Function) ────────────────────
 
-export async function serverAction(serverId: number, action: 'start' | 'stop' | 'restart' | 'kill' | 'command' | 'launch', command?: string): Promise<{ success: boolean; message: string; newStatus?: string }> {
+export async function serverAction(serverId: number, action: 'start' | 'stop' | 'restart' | 'kill' | 'command', command?: string): Promise<{ success: boolean; message: string; newStatus?: string }> {
   const { data, error } = await supabase.functions.invoke('server-control', {
     body: { serverId, action, command },
   });
@@ -66,7 +66,6 @@ export async function kickPlayer(serverId: number, playerName: string): Promise<
     .update({ is_online: false })
     .eq('server_id', serverId).eq('name', playerName);
   if (error) throw error;
-  // Also send kick command via edge function
   const safeName = playerName.replace(/[\r\n\0]/g, '').slice(0, 200);
   await serverAction(serverId, 'command', `KICK ${safeName}`);
 }
@@ -93,7 +92,6 @@ export async function banPlayer(serverId: number, playerName: string, reason: st
   });
   if (error) throw error;
 
-  // Also mark player offline and send ban command
   await supabase.from('players').update({ is_online: false }).eq('server_id', serverId).eq('name', playerName);
   const safeName = playerName.replace(/[\r\n\0]/g, '').slice(0, 200);
   await serverAction(serverId, 'command', `BAN ${safeName}`);
@@ -121,6 +119,31 @@ export async function getEvents(serverId: number, filters?: { type?: string; sea
     events = events.filter(e => JSON.stringify(e.payload).toLowerCase().includes(s));
   }
   return events;
+}
+
+// ─── Console Lines (from console_lines DB table) ────────────
+
+export async function getConsoleLinesFromDB(serverId: number, since?: number, limit = 500): Promise<ConsoleLine[]> {
+  let query = supabase
+    .from('console_lines')
+    .select('*')
+    .eq('server_id', serverId)
+    .order('timestamp', { ascending: false })
+    .limit(limit);
+
+  if (since) {
+    const sinceDate = new Date(since).toISOString();
+    query = query.gte('timestamp', sinceDate);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []).reverse().map(l => ({
+    id: l.id,
+    timestamp: new Date(l.timestamp).getTime() / 1000,
+    type: l.line_type as ConsoleLine['type'],
+    text: l.text,
+  }));
 }
 
 // ─── Metrics ─────────────────────────────────────────────
@@ -297,18 +320,8 @@ export async function getBrowserServers(): Promise<BrowserServer[]> {
 // ─── Console / Commands ─────────────────────────────────
 
 export async function sendCommand(serverId: number, command: string): Promise<string> {
-  try {
-    const result = await serverAction(serverId, 'command', command);
-    return result.message || `> ${command}\nCommand sent`;
-  } catch {
-    // Fallback: insert directly to server_events
-    await supabase.from('server_events').insert({
-      server_id: serverId,
-      event_type: 'command',
-      payload: { command, source: 'panel' },
-    });
-    return `> ${command}\nCommand queued for server ${serverId}`;
-  }
+  const result = await serverAction(serverId, 'command', command);
+  return result.message || `> ${command}`;
 }
 
 // ─── Password Change ─────────────────────────────────────
@@ -318,7 +331,7 @@ export async function changePassword(newPassword: string): Promise<void> {
   if (error) throw error;
 }
 
-// ─── Server Status (via Agent) ─────────────────────────────
+// ─── Server Status (via Edge Function) ─────────────────────
 
 export async function pollServerStatus(serverId: number): Promise<any> {
   const { data, error } = await supabase.functions.invoke('server-status', {
@@ -350,24 +363,13 @@ export async function getRecentEventsAll(limit = 10): Promise<Array<ServerEvent 
   return events.map(e => ({ ...e, server_name: nameMap.get(e.server_id) || `Server #${e.server_id}` }));
 }
 
-// ─── Console Streaming (via Agent) ─────────────────────────
+// ─── Console Streaming (via Edge Function or DB) ────────────
 
 export async function getConsoleLines(serverId: number, since?: number): Promise<{ lines: Array<{ timestamp: number; type: string; text: string }>; source: string }> {
   const { data, error } = await supabase.functions.invoke('server-console', {
     body: { serverId, since },
   });
   if (error) throw error;
-  return data;
-}
-
-// ─── Server Launch (via Agent) ─────────────────────────────
-
-export async function launchServer(serverId: number): Promise<{ success: boolean; message: string }> {
-  const { data, error } = await supabase.functions.invoke('server-control', {
-    body: { serverId, action: 'launch' },
-  });
-  if (error) throw error;
-  if (data?.error) throw new Error(data.error);
   return data;
 }
 

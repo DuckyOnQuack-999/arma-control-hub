@@ -44,6 +44,41 @@ export type Database = {
         }
         Relationships: []
       }
+      console_lines: {
+        Row: {
+          id: number
+          server_id: number
+          timestamp: string
+          line_type: string
+          text: string
+          source: string
+        }
+        Insert: {
+          id?: never
+          server_id: number
+          timestamp?: string
+          line_type?: string
+          text: string
+          source?: string
+        }
+        Update: {
+          id?: never
+          server_id?: number
+          timestamp?: string
+          line_type?: string
+          text?: string
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "console_lines_server_id_fkey"
+            columns: ["server_id"]
+            isOneToOne: false
+            referencedRelation: "servers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bans: {
         Row: {
           banned_by: string

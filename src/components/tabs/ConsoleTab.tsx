@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { useConsoleStore } from '@/stores/consoleStore';
-import { sendCommand, getConsoleLines } from '@/lib/supabaseApi';
+import { sendCommand, getConsoleLinesFromDB } from '@/lib/supabaseApi';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,42 +21,24 @@ const lineColors: Record<ConsoleLineType, string> = {
   info: 'text-primary',
 };
 
-// Full Armagetron command list from server admin docs
 const ARMA_COMMANDS = [
-  // Player management
   'PLAYERS', 'KICK', 'BAN', 'BAN_IP', 'UNBAN', 'UNBAN_IP',
   'SILENCE', 'VOICE',
-  // Auth
   'LOGIN', 'LOGOUT',
-  // Server control
   'QUIT', 'EXIT', 'SHUTDOWN', 'RESTART',
-  // Chat / messaging
   'SAY', 'CENTER_MESSAGE', 'CONSOLE_MESSAGE',
-  // Config loading
   'INCLUDE', 'RINCLUDE',
-  // All config keys are also valid commands
   ...configKeys.map(k => k.key),
 ];
 
-// Deduplicate
 const UNIQUE_COMMANDS = [...new Set(ARMA_COMMANDS)].sort();
-
-function eventToLineType(eventType: string): ConsoleLineType {
-  const map: Record<string, ConsoleLineType> = {
-    player_join: 'join', player_leave: 'leave', kill: 'kill',
-    chat: 'chat', ban: 'warning', kick: 'warning',
-    crash: 'error', start: 'info', stop: 'info',
-    restart: 'info', round_end: 'system', command: 'system',
-  };
-  return map[eventType] || 'system';
-}
 
 let lineIdCounter = 100;
 
 export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; agentUrl?: string | null }) {
-  const { lines, addLine, clearLines } = useConsoleStore();
+  const { lines, addLine, addLines, clearLines } = useConsoleStore();
   const [command, setCommand] = useState('');
-  const [connected, setConnected] = useState(true);
+  const [connected, setConnected] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
@@ -69,41 +51,43 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
     return UNIQUE_COMMANDS.filter(c => c.startsWith(upper)).slice(0, 8);
   }, [command]);
 
+  // Load historical console lines from DB
   useEffect(() => {
     clearLines();
     const loadHistory = async () => {
-      const { data } = await supabase
-        .from('server_events')
-        .select('*')
-        .eq('server_id', serverId)
-        .order('occurred_at', { ascending: false })
-        .limit(50);
-      if (data) {
-        const consolelines: ConsoleLine[] = data.reverse().map(e => ({
-          id: lineIdCounter++,
-          timestamp: new Date(e.occurred_at).getTime() / 1000,
-          type: eventToLineType(e.event_type),
-          text: `[${e.event_type.toUpperCase()}] ${typeof e.payload === 'object' ? JSON.stringify(e.payload) : e.payload}`,
-        }));
-        consolelines.forEach(l => addLine(l));
+      try {
+        const dbLines = await getConsoleLinesFromDB(serverId, undefined, 200);
+        if (dbLines.length > 0) {
+          const consoleLines: ConsoleLine[] = dbLines.map(l => ({
+            id: lineIdCounter++,
+            timestamp: l.timestamp,
+            type: l.type,
+            text: l.text,
+          }));
+          addLines(consoleLines);
+        }
+      } catch (err) {
+        console.error('Failed to load console history:', err);
       }
     };
     loadHistory();
+  }, [serverId]);
 
+  // Realtime subscription for new console_lines
+  useEffect(() => {
     const channel = supabase
       .channel(`console-${serverId}`)
       .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'server_events',
+        event: 'INSERT', schema: 'public', table: 'console_lines',
         filter: `server_id=eq.${serverId}`,
       }, (payload) => {
-        const e = payload.new as any;
-        const line: ConsoleLine = {
+        const row = payload.new as any;
+        addLine({
           id: lineIdCounter++,
-          timestamp: new Date(e.occurred_at).getTime() / 1000,
-          type: eventToLineType(e.event_type),
-          text: `[${e.event_type.toUpperCase()}] ${typeof e.payload === 'object' ? JSON.stringify(e.payload) : e.payload}`,
-        };
-        addLine(line);
+          timestamp: new Date(row.timestamp).getTime() / 1000,
+          type: (row.line_type as ConsoleLineType) || 'system',
+          text: row.text || '',
+        });
         setConnected(true);
       })
       .subscribe((status) => {
@@ -113,15 +97,17 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
     return () => { supabase.removeChannel(channel); };
   }, [serverId]);
 
-  // Agent console polling
+  // Agent console polling (supplemental — for agent-connected servers)
   useEffect(() => {
     if (!agentUrl) return;
     let lastTs = Date.now();
     const poll = async () => {
       try {
-        const result = await getConsoleLines(serverId, lastTs);
-        if (result?.lines?.length) {
-          result.lines.forEach((l: any) => {
+        const result = await supabase.functions.invoke('server-console', {
+          body: { serverId, since: lastTs },
+        });
+        if (result.data?.lines?.length) {
+          result.data.lines.forEach((l: any) => {
             addLine({
               id: lineIdCounter++,
               timestamp: l.timestamp || Date.now() / 1000,
@@ -133,11 +119,11 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
         }
         setConnected(true);
       } catch {
-        // silent — agent may be offline
+        // agent may be offline — DB subscription handles it
       }
     };
     poll();
-    const interval = setInterval(poll, 2000);
+    const interval = setInterval(poll, 3000);
     return () => clearInterval(interval);
   }, [serverId, agentUrl]);
 
@@ -156,13 +142,12 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
   const handleSend = async () => {
     if (!command.trim()) return;
     addCommand(command);
-    const line: ConsoleLine = {
+    addLine({
       id: lineIdCounter++,
       timestamp: Date.now() / 1000,
       type: 'system',
       text: `> ${command}`,
-    };
-    addLine(line);
+    });
     try {
       await sendCommand(serverId, command);
     } catch (err: any) {
@@ -209,33 +194,27 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
     URL.revokeObjectURL(url);
   };
 
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-
   const handleReconnect = () => {
     toast({ title: 'Reconnecting...', description: 'Re-subscribing to console stream' });
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-    }
+    supabase.removeChannel(supabase.channel(`console-${serverId}`));
     const channel = supabase
       .channel(`console-${serverId}-${Date.now()}`)
       .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'server_events',
+        event: 'INSERT', schema: 'public', table: 'console_lines',
         filter: `server_id=eq.${serverId}`,
       }, (payload) => {
-        const e = payload.new as any;
-        const line: ConsoleLine = {
+        const row = payload.new as any;
+        addLine({
           id: lineIdCounter++,
-          timestamp: new Date(e.occurred_at).getTime() / 1000,
-          type: eventToLineType(e.event_type),
-          text: `[${e.event_type.toUpperCase()}] ${typeof e.payload === 'object' ? JSON.stringify(e.payload) : e.payload}`,
-        };
-        addLine(line);
+          timestamp: new Date(row.timestamp).getTime() / 1000,
+          type: (row.line_type as ConsoleLineType) || 'system',
+          text: row.text || '',
+        });
         setConnected(true);
       })
       .subscribe((status) => {
         setConnected(status === 'SUBSCRIBED');
       });
-    channelRef.current = channel;
   };
 
   const formatTime = (ts: number) => new Date(ts * 1000).toLocaleTimeString();
@@ -269,6 +248,11 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
       </div>
 
       <div ref={outputRef} onScroll={handleScroll} className="flex-1 overflow-auto p-3 font-mono text-xs leading-5">
+        {lines.length === 0 && (
+          <div className="text-center text-muted-foreground py-12">
+            No console output yet. Start the server or send a command.
+          </div>
+        )}
         {lines.map(line => (
           <div key={line.id} className="flex gap-2">
             <span className="text-muted-foreground shrink-0 select-none">{formatTime(line.timestamp)}</span>
@@ -302,9 +286,8 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
             onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
             placeholder="Enter command... (Tab to autocomplete)"
             className="flex-1 border-none bg-transparent font-mono text-sm focus-visible:ring-0 focus-visible:ring-offset-0 h-8"
-            disabled={!connected}
           />
-          <Button size="sm" onClick={handleSend} className="h-8" disabled={!connected}>Send</Button>
+          <Button size="sm" onClick={handleSend} className="h-8">Send</Button>
         </div>
       </div>
     </div>

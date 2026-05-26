@@ -4,10 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { createServer, launchServer } from '@/lib/supabaseApi';
+import { createServer, serverAction } from '@/lib/supabaseApi';
 import { toast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { Loader as Loader2 } from 'lucide-react';
 
 interface Props {
   open: boolean;
@@ -40,16 +40,16 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
       const server = await createServer(form);
       toast({ title: 'Server created', description: `${form.name} has been added` });
 
-      // Auto-launch if agent is configured
+      // Auto-start if agent is configured
       if (form.agent_url) {
         setLaunching(true);
         try {
-          const result = await launchServer(server.id);
-          toast({ title: 'Server launched', description: result.message });
+          const result = await serverAction(server.id, 'start');
+          toast({ title: 'Server started', description: result.message });
         } catch (err: any) {
           toast({
-            title: 'Launch failed',
-            description: `Server created but launch failed: ${err?.message}. You can retry from the Overview tab.`,
+            title: 'Start failed',
+            description: `Server created but start failed: ${err?.message}. You can retry from the Overview tab.`,
             variant: 'destructive',
           });
         } finally {
@@ -57,9 +57,9 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
         }
       } else {
         toast({
-          title: 'No agent configured',
-          description: 'Set up a host agent for real server control',
-          action: <Button size="sm" variant="outline" className="text-xs" onClick={() => navigate('/agent-wizard')}>Setup Agent</Button>,
+          title: 'Server created',
+          description: 'Configure a host agent for remote process control, or manage directly from the panel.',
+          action: <Button size="sm" variant="outline" className="text-xs" onClick={() => navigate('/host-settings')}>Host Settings</Button>,
         });
       }
 
@@ -123,17 +123,17 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
               </Button>
             </div>
             <p className="text-[10px] text-muted-foreground">
-              HTTP endpoint of the host agent. Leave empty for simulation mode.
-              {form.agent_url && ' Server will be auto-launched on the agent after creation.'}
+              HTTP endpoint of the host agent. Leave empty for panel-managed mode.
+              {form.agent_url && ' Server will be auto-started on the agent after creation.'}
             </p>
           </div>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={isWorking}>Cancel</Button>
           <Button onClick={handleSubmit} disabled={isWorking}>
-            {launching ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Launching…</> :
+            {launching ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Starting…</> :
              loading ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Creating…</> :
-             form.agent_url ? 'Create & Launch' : 'Create Server'}
+             form.agent_url ? 'Create & Start' : 'Create Server'}
           </Button>
         </DialogFooter>
       </DialogContent>

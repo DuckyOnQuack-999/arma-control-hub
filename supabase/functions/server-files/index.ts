@@ -25,26 +25,18 @@ function validatePath(p: string): boolean {
   return true;
 }
 
-async function authenticateAndAuthorize(req: Request) {
-  const authHeader = req.headers.get('Authorization');
-  if (!authHeader) throw new Error('Missing authorization');
+async function safeDbWrite(op: Promise<{ error: any }>, label: string) {
+  const { error } = await op;
+  if (error) console.error(`DB write error (${label}):`, error.message);
+}
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const supabase = createClient(supabaseUrl, supabaseKey);
-
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-  const userClient = createClient(supabaseUrl, anonKey, {
-    global: { headers: { Authorization: authHeader } },
-  });
-  const { data: { user }, error: authError } = await userClient.auth.getUser();
-  if (authError || !user) throw new Error('Unauthorized');
-
-  const { data: hasAdmin } = await supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' });
-  const { data: hasMod } = await supabase.rpc('has_role', { _user_id: user.id, _role: 'moderator' });
-  if (!hasAdmin && !hasMod) throw new Error('Insufficient permissions');
-
-  return { user, supabase };
+async function parseJsonSafe(resp: Response): Promise<any> {
+  try {
+    return await resp.json();
+  } catch {
+    console.error('Failed to parse agent response as JSON');
+    return { error: 'Agent returned invalid JSON' };
+  }
 }
 
 Deno.serve(async (req) => {
@@ -53,8 +45,45 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { user, supabase } = await authenticateAndAuthorize(req);
-    const body = await req.json();
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Missing authorization' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: authError } = await userClient.auth.getUser();
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const { data: hasAdmin } = await supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' });
+    const { data: hasMod } = await supabase.rpc('has_role', { _user_id: user.id, _role: 'moderator' });
+    if (!hasAdmin && !hasMod) {
+      return new Response(JSON.stringify({ error: 'Insufficient permissions' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return new Response(JSON.stringify({ error: 'Invalid request body' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const { serverId, operation, path, content, oldPath, newPath } = body;
 
     if (!serverId || !operation) {
@@ -70,7 +99,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Validate paths
     if (operation === 'rename') {
       if (!validatePath(oldPath) || !validatePath(newPath)) {
         return new Response(JSON.stringify({ error: 'Invalid path (traversal or null bytes not allowed)' }), {
@@ -112,63 +140,44 @@ Deno.serve(async (req) => {
       switch (operation) {
         case 'list':
           agentResp = await fetch(`${agentUrl}/files?path=${encodeURIComponent(path)}`, {
-            method: 'GET',
-            signal: AbortSignal.timeout(15000),
+            method: 'GET', signal: AbortSignal.timeout(15000),
           });
           break;
-
         case 'read':
           agentResp = await fetch(`${agentUrl}/files/read?path=${encodeURIComponent(path)}`, {
-            method: 'GET',
-            signal: AbortSignal.timeout(15000),
+            method: 'GET', signal: AbortSignal.timeout(15000),
           });
           break;
-
         case 'write':
           agentResp = await fetch(`${agentUrl}/files/write`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path, content }),
-            signal: AbortSignal.timeout(15000),
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path, content }), signal: AbortSignal.timeout(15000),
           });
           break;
-
         case 'rename':
           agentResp = await fetch(`${agentUrl}/files/rename`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ oldPath, newPath }),
-            signal: AbortSignal.timeout(15000),
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ oldPath, newPath }), signal: AbortSignal.timeout(15000),
           });
           break;
-
         case 'delete':
           agentResp = await fetch(`${agentUrl}/files/delete`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path }),
-            signal: AbortSignal.timeout(15000),
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path }), signal: AbortSignal.timeout(15000),
           });
           break;
-
         case 'mkdir':
           agentResp = await fetch(`${agentUrl}/files/mkdir`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path }),
-            signal: AbortSignal.timeout(15000),
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path }), signal: AbortSignal.timeout(15000),
           });
           break;
-
         case 'upload':
           agentResp = await fetch(`${agentUrl}/files/upload`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path, content }),
-            signal: AbortSignal.timeout(30000),
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path, content }), signal: AbortSignal.timeout(30000),
           });
           break;
-
         default:
           return new Response(JSON.stringify({ error: 'Unknown operation' }), {
             status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -181,22 +190,22 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Log the operation
-    await supabase.from('audit_log').insert({
+    await safeDbWrite(supabase.from('audit_log').insert({
       user_id: user.id,
       action: `files.${operation}`,
       target_type: 'server',
       target_id: String(server.id),
       details: { path: path || oldPath, operation },
-    });
+    }), 'audit_log insert for file op');
 
-    const agentData = await agentResp.json();
+    const agentData = await parseJsonSafe(agentResp);
     return new Response(JSON.stringify(agentData), {
       status: agentResp.ok ? 200 : agentResp.status,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error: any) {
+    console.error('Server files error:', error);
     const status = error.message === 'Unauthorized' ? 401
       : error.message === 'Missing authorization' ? 401
       : error.message === 'Insufficient permissions' ? 403

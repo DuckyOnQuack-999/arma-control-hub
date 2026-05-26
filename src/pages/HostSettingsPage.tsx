@@ -10,10 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import { getServers, updateServer, testAgentConnection, getBinaryDownloadUrl } from '@/lib/supabaseApi';
 import { useAuthStore } from '@/stores/authStore';
-import {
-  Copy, Terminal, Server, Download, CheckCircle, FileDown, Wifi, WifiOff,
-  ExternalLink, Save, Zap, Settings, Globe, BookOpen, FolderOpen, Loader2
-} from 'lucide-react';
+import { Copy, Terminal, Server, Download, CircleCheck as CheckCircle, FileDown, Wifi, WifiOff, ExternalLink, Save, Zap, Settings, Globe, BookOpen, FolderOpen, Loader as Loader2 } from 'lucide-react';
 import type { Server as ServerType } from '@/data/types';
 
 export default function HostSettingsPage() {
@@ -100,7 +97,7 @@ function RegisteredHosts({ servers }: { servers: ServerType[] }) {
           <CardHeader className="pb-2">
             <CardTitle className="font-display text-sm flex items-center gap-2">
               {url === 'No Agent' ? (
-                <><WifiOff className="h-4 w-4 text-muted-foreground" /> No Agent (Simulation)</>
+                <><WifiOff className="h-4 w-4 text-muted-foreground" /> No Agent (Panel Managed)</>
               ) : (
                 <><Wifi className="h-4 w-4 text-neon-green" /> <span className="font-mono text-xs">{url}</span></>
               )}
@@ -593,16 +590,15 @@ function ServerPaths({ servers, isAdmin, onUpdate }: { servers: ServerType[]; is
 
 function ApiReference() {
   const endpoints = [
-    { method: 'POST', path: '/control', desc: 'Start, stop, restart, kill, or launch a server process', body: '{ action, serverId, command? }' },
-    { method: 'POST', path: '/status', desc: 'Poll agent for live server status (CPU, memory, players)', body: '{ serverId }' },
-    { method: 'POST', path: '/console', desc: 'Fetch recent console output lines from the agent', body: '{ serverId, since? }' },
+    { method: 'POST', path: '/control', desc: 'Start, stop, restart, kill, or send a command to a server', body: '{ action: start|stop|restart|kill|command, serverId, command? }' },
+    { method: 'POST', path: '/status', desc: 'Poll agent or compute server status (CPU, memory, players)', body: '{ serverId }' },
+    { method: 'POST', path: '/console', desc: 'Fetch recent console output lines from DB or agent', body: '{ serverId, since?, limit? }' },
     { method: 'POST', path: '/files', desc: 'File operations: list, read, write, rename, delete, mkdir', body: '{ serverId, operation, path, content? }' },
-    { method: 'POST', path: '/launch', desc: 'Launch a new dedicated server instance on the host', body: '{ serverId, config }' },
   ];
 
   const agentEndpoints = [
     { method: 'GET', path: '/status', desc: 'Returns server process status, CPU, memory, player count' },
-    { method: 'POST', path: '/control', desc: 'Accepts { action: start|stop|restart|kill|launch }' },
+    { method: 'POST', path: '/control', desc: 'Accepts { action: start|stop|restart|kill }' },
     { method: 'POST', path: '/command', desc: 'Send a console command to the running process stdin' },
     { method: 'GET', path: '/console?since=N', desc: 'Returns console output lines since timestamp N' },
     { method: 'GET', path: '/files?path=/dir', desc: 'List directory contents' },

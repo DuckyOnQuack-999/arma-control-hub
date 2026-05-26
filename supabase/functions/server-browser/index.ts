@@ -36,10 +36,14 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)));
 }
 
-const BROWSER_URLS = [
-  'https://browser.armanelgtron.tk/legacy/?info=_',
-  'https://armagetronad.org/browser/legacy/?info=_',
-];
+function getBrowserUrls(): string[] {
+  const envUrl = Deno.env.get('BROWSER_URL');
+  if (envUrl) return [envUrl];
+  return [
+    'https://browser.armanelgtron.tk/legacy/?info=_',
+    'https://armagetronad.org/browser/legacy/?info=_',
+  ];
+}
 
 async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
@@ -55,7 +59,8 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Respons
 }
 
 async function fetchServerList(): Promise<BrowserServer[]> {
-  for (const url of BROWSER_URLS) {
+  const urls = getBrowserUrls();
+  for (const url of urls) {
     try {
       const response = await fetchWithTimeout(url, 10000);
       if (!response.ok) {
@@ -74,6 +79,11 @@ async function fetchServerList(): Promise<BrowserServer[]> {
     }
   }
   console.error('All browser sources failed');
+  // Return stale cache rather than empty array if available
+  if (cachedServers && cachedServers.length > 0) {
+    console.log(`Returning stale cache with ${cachedServers.length} servers`);
+    return cachedServers;
+  }
   return [];
 }
 
@@ -117,15 +127,11 @@ function parseServers(html: string): BrowserServer[] {
 
       let version = '';
       const versionMatch = afterAnchor.match(/Version:\s*([^\s<]+)/i);
-      if (versionMatch) {
-        version = versionMatch[1].trim();
-      }
+      if (versionMatch) version = versionMatch[1].trim();
 
       let serverUrl = '';
       const urlMatch = afterAnchor.match(/URL:\s*(https?:\/\/[^\s<]+)/i);
-      if (urlMatch) {
-        serverUrl = urlMatch[1].trim();
-      }
+      if (urlMatch) serverUrl = urlMatch[1].trim();
 
       let gameType = 'Armagetron';
       if (version) {
@@ -135,18 +141,7 @@ function parseServers(html: string): BrowserServer[] {
         else gameType = version;
       }
 
-      servers.push({
-        id: id++,
-        name,
-        host,
-        port,
-        players: playerCount,
-        maxPlayers,
-        gameType,
-        version,
-        playerNames,
-        url: serverUrl,
-      });
+      servers.push({ id: id++, name, host, port, players: playerCount, maxPlayers, gameType, version, playerNames, url: serverUrl });
     } catch (e) {
       console.error('Error parsing server block:', e);
       continue;
@@ -157,10 +152,7 @@ function parseServers(html: string): BrowserServer[] {
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 200,
-      headers: corsHeaders
-    });
+    return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
@@ -186,18 +178,23 @@ Deno.serve(async (req) => {
     const now = Date.now();
     if (cachedServers && (now - cacheTime) < CACHE_TTL) {
       return new Response(JSON.stringify({ servers: cachedServers, cached: true, count: cachedServers.length }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     const servers = await fetchServerList();
-    cachedServers = servers;
-    cacheTime = now;
+    if (servers.length > 0) {
+      cachedServers = servers;
+      cacheTime = now;
+    }
 
-    return new Response(JSON.stringify({ servers, cached: false, count: servers.length }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    return new Response(JSON.stringify({
+      servers,
+      cached: false,
+      count: servers.length,
+      stale: servers === cachedServers && (now - cacheTime) >= CACHE_TTL,
+    }), {
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error) {
@@ -206,8 +203,7 @@ Deno.serve(async (req) => {
       servers: cachedServers || [],
       error: 'Failed to fetch server list',
     }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });

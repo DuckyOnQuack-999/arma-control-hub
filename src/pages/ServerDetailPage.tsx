@@ -81,7 +81,7 @@ const ServerDetailPage = () => {
           {server.agent_url ? (
             <span className="flex items-center gap-1 text-[10px] text-neon-green"><Wifi className="h-3 w-3" /> Agent</span>
           ) : (
-            <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><Monitor className="h-3 w-3" /> Simulation</span>
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><Monitor className="h-3 w-3" /> Panel Managed</span>
           )}
         </div>
         <ServerControlBar

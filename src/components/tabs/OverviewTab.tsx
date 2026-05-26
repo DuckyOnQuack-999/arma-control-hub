@@ -43,7 +43,7 @@ export default function OverviewTab({ server, onTabChange }: { server: Server; o
     setTesting(true);
     try {
       if (!server.agent_url) {
-        toast({ title: 'Simulation mode', description: `Server status: ${server.status}. No agent configured — using simulation mode.` });
+        toast({ title: 'Panel Managed', description: `Server status: ${server.status}. No agent configured — server is managed directly through the panel database.` });
         return;
       }
       const result = await pollServerStatus(server.id);
@@ -133,7 +133,7 @@ export default function OverviewTab({ server, onTabChange }: { server: Server; o
               Agent
             </span>
             <span className="font-mono text-xs truncate max-w-48">
-              {server.agent_url || 'Not configured (simulation)'}
+              {server.agent_url || 'Not configured (panel managed)'}
             </span>
           </div>
           {isAdmin && (
