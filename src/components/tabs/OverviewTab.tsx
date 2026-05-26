@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Server, ServerStatus } from '@/data/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ServerStatusBadge } from '@/components/server/ServerStatusBadge';
-import { Map, Clock, Users, Cpu, HardDrive, Wifi, WifiOff, Save, ExternalLink, FolderOpen, Terminal, Settings, Shield, Zap, Edit2, X } from 'lucide-react';
+import { Map, Clock, Users, Cpu, HardDrive, Wifi, WifiOff, Save, ExternalLink, FolderOpen, Terminal, Settings, Shield, Zap, CreditCard as Edit2, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { updateServer, pollServerStatus } from '@/lib/supabaseApi';
@@ -42,6 +42,10 @@ export default function OverviewTab({ server, onTabChange }: { server: Server; o
   const handleTestAgent = async () => {
     setTesting(true);
     try {
+      if (!server.agent_url) {
+        toast({ title: 'Simulation mode', description: `Server status: ${server.status}. No agent configured — using simulation mode.` });
+        return;
+      }
       const result = await pollServerStatus(server.id);
       if (result?.agent_error) {
         toast({ title: 'Agent unreachable', description: result.agent_error, variant: 'destructive' });
@@ -146,7 +150,7 @@ export default function OverviewTab({ server, onTabChange }: { server: Server; o
                 </Button>
               </div>
               <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleTestAgent} disabled={testing || !server.agent_url}>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleTestAgent} disabled={testing}>
                   <Zap className="h-3 w-3 mr-1" /> {testing ? 'Testing…' : 'Test Connection'}
                 </Button>
                 <Button size="sm" variant="link" className="h-auto p-0 text-xs text-primary" onClick={() => navigate('/host-settings')}>

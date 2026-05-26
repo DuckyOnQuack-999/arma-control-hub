@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,7 +10,6 @@ function validateAgentUrl(url: string): boolean {
   try {
     const u = new URL(url);
     if (!['http:', 'https:'].includes(u.protocol)) return false;
-    // Block only cloud metadata endpoint — private IPs are expected for game servers
     if (u.hostname === '169.254.169.254') return false;
     return true;
   } catch {
@@ -72,7 +71,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const validActions = ['start', 'stop', 'restart', 'kill', 'command', 'launch'];
+    const validActions = ['start', 'stop', 'restart', 'kill', 'command'];
     if (!validActions.includes(action)) {
       return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -111,33 +110,14 @@ async function proxyToAgent(
   user: any, supabase: any, cors: Record<string, string>
 ) {
   const agentUrl = server.agent_url.replace(/\/$/, '');
-  const agentApiKey = Deno.env.get('RXTRON_API_KEY');
-  
-  if (!agentApiKey) {
-    return new Response(JSON.stringify({ error: 'Agent API key not configured. Set RXTRON_API_KEY in Edge Function secrets.' }), {
-      status: 500, headers: { ...cors, 'Content-Type': 'application/json' },
-    });
-  }
-  
+
   const payload: Record<string, unknown> = { action, serverId: server.id };
   if (command) payload.command = command;
-  if (action === 'launch') {
-    payload.config = {
-      executable_path: server.executable_path,
-      data_dir: server.data_dir,
-      config_dir: server.config_dir,
-      port: server.port,
-      max_players: server.max_players,
-    };
-  }
 
   try {
     const agentResp = await fetch(`${agentUrl}/control`, {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'X-API-Key': agentApiKey,
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(15000),
     });
@@ -172,7 +152,6 @@ async function proxyToAgent(
     });
   } catch (fetchErr) {
     console.error('Agent proxy error:', fetchErr);
-    // Fall back to simulation mode when agent is unreachable
     return await simulateAction(server, action, command, user, supabase, cors);
   }
 }
@@ -202,7 +181,7 @@ async function simulateAction(
       break;
 
     case 'stop':
-      if (server.status !== 'online') {
+      if (server.status !== 'online' && server.status !== 'starting') {
         return new Response(JSON.stringify({ error: `Cannot stop: server is ${server.status}` }), {
           status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
         });
@@ -214,19 +193,26 @@ async function simulateAction(
       break;
 
     case 'restart':
-      if (server.status !== 'online') {
+      if (server.status !== 'online' && server.status !== 'crashed' && server.status !== 'offline') {
         return new Response(JSON.stringify({ error: `Cannot restart: server is ${server.status}` }), {
           status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
         });
       }
-      await supabase.from('servers').update({ status: 'stopping' }).eq('id', server.id);
-      await supabase.from('players').update({ is_online: false }).eq('server_id', server.id);
+      if (server.status === 'online') {
+        await supabase.from('servers').update({ status: 'stopping' }).eq('id', server.id);
+        await supabase.from('players').update({ is_online: false }).eq('server_id', server.id);
+      }
       await supabase.from('servers').update({ status: 'starting' }).eq('id', server.id);
       await supabase.from('servers').update({ status: 'online', uptime: 0, player_count: 0 }).eq('id', server.id);
       newStatus = 'online';
       break;
 
     case 'kill':
+      if (server.status === 'offline') {
+        return new Response(JSON.stringify({ error: 'Cannot kill: server is already offline' }), {
+          status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
+        });
+      }
       await supabase.from('players').update({ is_online: false }).eq('server_id', server.id);
       await supabase.from('servers').update({ status: 'offline', player_count: 0, cpu_percent: 0, memory_mb: 0 }).eq('id', server.id);
       newStatus = 'offline';
@@ -246,17 +232,6 @@ async function simulateAction(
       }
       eventType = 'command';
       payload.command = command;
-      break;
-
-    case 'launch':
-      await supabase.from('servers').update({ status: 'starting' }).eq('id', server.id);
-      await supabase.from('servers').update({ status: 'online', uptime: 0 }).eq('id', server.id);
-      newStatus = 'online';
-      payload.executable = server.executable_path;
-      payload.config_dir = server.config_dir;
-      payload.data_dir = server.data_dir;
-      payload.port = server.port;
-      payload.max_players = server.max_players;
       break;
 
     default:

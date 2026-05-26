@@ -19,6 +19,7 @@ export function ServerControlBar({ status, onStart, onStop, onRestart, onKill, l
   const isRunning = status === 'online';
   const canStart = status === 'offline' || status === 'crashed';
   const isBusy = status === 'starting' || status === 'stopping';
+  const canRestart = isRunning || canStart;
 
   return (
     <div className="flex items-center gap-2">
@@ -30,11 +31,11 @@ export function ServerControlBar({ status, onStart, onStop, onRestart, onKill, l
         className="bg-neon-red/20 text-neon-red border border-neon-red/50 hover:bg-neon-red/30">
         <Square className="h-3.5 w-3.5" /> Stop
       </Button>
-      <Button size="sm" disabled={!isRunning || loading} onClick={() => setConfirmAction('restart')}
+      <Button size="sm" disabled={!canRestart || loading} onClick={() => setConfirmAction('restart')}
         className="bg-neon-yellow/20 text-neon-yellow border border-neon-yellow/50 hover:bg-neon-yellow/30">
         <RotateCcw className="h-3.5 w-3.5" /> Restart
       </Button>
-      <Button size="sm" variant="destructive" disabled={(status === 'offline') || loading} onClick={() => setConfirmAction('kill')}>
+      <Button size="sm" variant="destructive" disabled={!canKill || loading} onClick={() => setConfirmAction('kill')}>
         <Skull className="h-3.5 w-3.5" /> Kill
       </Button>
 
