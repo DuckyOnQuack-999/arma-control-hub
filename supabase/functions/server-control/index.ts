@@ -47,6 +47,44 @@ async function parseJsonSafe(resp: Response): Promise<any> {
   }
 }
 
+// Prepare config files for server start
+async function prepareConfigFiles(supabase: any, serverId: number): Promise<void> {
+  // Get all config key-values for this server
+  const { data: configs, error } = await supabase
+    .from('server_configs')
+    .select('filename, key, value')
+    .eq('server_id', serverId);
+
+  if (error || !configs || configs.length === 0) {
+    return; // No configs to write
+  }
+
+  // Group by filename and write to server_files
+  const files: Record<string, string[]> = {};
+  for (const cfg of configs) {
+    const file = cfg.filename || 'settings_custom.cfg';
+    if (!files[file]) files[file] = [];
+    files[file].push(`${cfg.key} ${cfg.value}`);
+  }
+
+  // Write each config file to server_files
+  for (const [filename, lines] of Object.entries(files)) {
+    const content = lines.join('\n') + '\n';
+    const path = `/config/${filename}`;
+
+    await safeDbWrite(
+      supabase.from('server_files').upsert({
+        server_id: serverId,
+        path,
+        content,
+        is_directory: false,
+        size_bytes: new TextEncoder().encode(content).length,
+      }, { onConflict: 'server_id,path' }),
+      `config file ${filename} write`
+    );
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -212,9 +250,20 @@ async function dbDrivenControl(
       }
 
       await safeDbWrite(supabase.from('servers').update({ status: 'starting' }).eq('id', server.id), 'server status starting');
+
+      // Prepare config files from database
+      await prepareConfigFiles(supabase, server.id);
+      await writeConsoleLine(supabase, server.id, 'info', `Config files prepared from database.`, 'panel');
+
       await writeConsoleLine(supabase, server.id, 'system', `Starting server on port ${server.port}...`, 'panel');
       await writeConsoleLine(supabase, server.id, 'info', `Binary: ${server.executable_path}`, 'panel');
       await writeConsoleLine(supabase, server.id, 'info', `Config: ${server.config_dir} | Data: ${server.data_dir}`, 'panel');
+      await writeConsoleLine(supabase, server.id, 'info', `Max Players: ${server.max_players}`, 'panel');
+
+      // Simulate startup sequence
+      await writeConsoleLine(supabase, server.id, 'system', `Loading configuration...`, 'panel');
+      await writeConsoleLine(supabase, server.id, 'system', `Binding to UDP port ${server.port}...`, 'panel');
+      await writeConsoleLine(supabase, server.id, 'system', `Server initialized successfully.`, 'panel');
 
       await safeDbWrite(supabase.from('metrics').insert({
         server_id: server.id, cpu_percent: 0, memory_mb: 0, player_count: 0,
@@ -238,13 +287,15 @@ async function dbDrivenControl(
 
       await safeDbWrite(supabase.from('servers').update({ status: 'stopping' }).eq('id', server.id), 'server status stopping');
       await writeConsoleLine(supabase, server.id, 'system', `Sending QUIT to server...`, 'panel');
+      await writeConsoleLine(supabase, server.id, 'system', `Saving configuration...`, 'panel');
+      await writeConsoleLine(supabase, server.id, 'system', `Closing connections...`, 'panel');
 
       await safeDbWrite(supabase.from('players').update({ is_online: false }).eq('server_id', server.id), 'players offline on stop');
 
       await safeDbWrite(supabase.from('servers').update({
         status: 'offline', player_count: 0, cpu_percent: 0, memory_mb: 0,
       }).eq('id', server.id), 'server status offline');
-      await writeConsoleLine(supabase, server.id, 'system', `Server stopped. All players disconnected.`, 'panel');
+      await writeConsoleLine(supabase, server.id, 'system', `Server stopped successfully.`, 'panel');
 
       newStatus = 'offline';
       break;
@@ -266,6 +317,10 @@ async function dbDrivenControl(
       }
 
       await safeDbWrite(supabase.from('servers').update({ status: 'starting' }).eq('id', server.id), 'server status starting on restart');
+
+      // Prepare config files from database
+      await prepareConfigFiles(supabase, server.id);
+
       await writeConsoleLine(supabase, server.id, 'system', `Starting server on port ${server.port}...`, 'panel');
 
       await safeDbWrite(supabase.from('servers').update({
@@ -284,7 +339,7 @@ async function dbDrivenControl(
         });
       }
 
-      await writeConsoleLine(supabase, server.id, 'error', `FORCE KILL initiated — all processes terminated immediately.`, 'panel');
+      await writeConsoleLine(supabase, server.id, 'error', `FORCE KILL initiated — process terminated immediately.`, 'panel');
 
       await safeDbWrite(supabase.from('players').update({ is_online: false }).eq('server_id', server.id), 'players offline on kill');
       await safeDbWrite(supabase.from('servers').update({

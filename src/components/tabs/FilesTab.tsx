@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
-import { Folder, File, ChevronRight, ArrowLeft, Save, X, CreditCard as Edit2, Trash2, FolderPlus, FilePlus, RefreshCw, Chrome as Home } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Folder, File, ChevronRight, ArrowLeft, Save, X, CreditCard as Edit2, Trash2, FolderPlus, FilePlus, RefreshCw, Chrome as Home, Database, Wifi } from 'lucide-react';
 
 interface FileEntry {
   name: string;
@@ -31,10 +32,10 @@ const FilesTab = ({ serverId, agentUrl }: Props) => {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Enable file listing regardless of agent - panel-managed mode works too
   const { data: files = [], isLoading, refetch } = useQuery({
     queryKey: ['files', serverId, currentPath],
     queryFn: () => listFiles(serverId, currentPath),
-    enabled: !!agentUrl,
   });
 
   const navigateTo = useCallback((path: string) => {
@@ -43,6 +44,7 @@ const FilesTab = ({ serverId, agentUrl }: Props) => {
   }, []);
 
   const breadcrumbs = currentPath.split('/').filter(Boolean);
+  const isPanelMode = !agentUrl;
 
   const handleOpenFile = async (name: string) => {
     const filePath = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`;
@@ -115,18 +117,6 @@ const FilesTab = ({ serverId, agentUrl }: Props) => {
     }
   };
 
-  if (!agentUrl) {
-    return (
-      <div className="rounded-lg border border-border bg-card p-8 text-center">
-        <Folder className="mx-auto h-12 w-12 text-muted-foreground mb-3" />
-        <h3 className="font-display text-lg font-bold mb-1">No Agent Connected</h3>
-        <p className="text-sm text-muted-foreground">
-          File management requires a host agent. Set up an agent in the Agent Wizard to browse and edit server files.
-        </p>
-      </div>
-    );
-  }
-
   if (editingFile) {
     const hasChanges = editContent !== editingFile.content;
     return (
@@ -157,6 +147,22 @@ const FilesTab = ({ serverId, agentUrl }: Props) => {
 
   return (
     <div className="space-y-3">
+      {/* Mode indicator */}
+      <div className="flex items-center justify-between">
+        <Badge variant="outline" className="text-xs">
+          {isPanelMode ? (
+            <><Database className="h-3 w-3 mr-1" /> Panel-Managed</>
+          ) : (
+            <><Wifi className="h-3 w-3 mr-1 text-success" /> Agent-Connected</>
+          )}
+        </Badge>
+        {isPanelMode && (
+          <span className="text-xs text-muted-foreground">
+            Files stored in panel database. Configure an agent for direct filesystem access.
+          </span>
+        )}
+      </div>
+
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1 text-sm">
@@ -214,7 +220,9 @@ const FilesTab = ({ serverId, agentUrl }: Props) => {
         {isLoading ? (
           <div className="p-8 text-center text-sm text-muted-foreground">Loading files…</div>
         ) : files.length === 0 ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">Empty directory</div>
+          <div className="p-8 text-center text-sm text-muted-foreground">
+            Empty directory. Create a file or folder to get started.
+          </div>
         ) : (
           <div className="divide-y divide-border">
             {currentPath !== '/' && (
