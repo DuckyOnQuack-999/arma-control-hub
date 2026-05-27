@@ -1,73 +1,172 @@
-# Welcome to your Lovable project
+# RetroCycles / Armagetron Advanced Control Panel
 
-## Project info
+A modern web-based control panel for managing Armagetron Advanced (RetroCycles) dedicated servers.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Features
 
-## How can I edit this code?
+- **Multi-server management** - Control multiple game servers from a single panel
+- **Real-time console** - Live PTY output streaming
+- **Configuration editor** - Visual and raw config file editors
+- **Player management** - View, kick, ban, and silence players
+- **Server browser** - UDP master server querying with HTML fallback
+- **File management** - Browse and edit server files
+- **Metrics dashboard** - CPU, memory, and player count graphs
+- **Dark theme with red accent** - Clean, modern gaming UI
 
-There are several ways of editing your application.
+## Architecture
 
-**Use Lovable**
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Frontend                             │
+│  (React + Vite + TypeScript + Tailwind + shadcn/ui)         │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Supabase Backend                          │
+│  • PostgreSQL database (servers, configs, players, etc.)    │
+│  • Edge Functions (server-control, server-files, etc.)      │
+│  • Real-time subscriptions                                   │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      Host Agent                              │
+│  • Node.js + Express + node-pty                             │
+│  • Process management (spawn/kill PTY)                       │
+│  • File system operations                                    │
+│  • Metrics collection (pidusage)                             │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                Armagetron Dedicated Server                   │
+│  (armagetronad-dedicated binary)                             │
+└─────────────────────────────────────────────────────────────┘
+```
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+### Two Modes
 
-Changes made via Lovable will be committed automatically to this repo.
+1. **Panel-Managed Mode** (default)
+   - Configs stored in database
+   - File operations via database storage
+   - Simulated process control
+   - Works without external agent
 
-**Use your preferred IDE**
+2. **Agent-Managed Mode** (optional)
+   - Real PTY spawning on host machine
+   - Direct filesystem access
+   - Real process metrics
+   - Requires host agent
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## Quick Start
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+### Option 1: Development Mode (Panel-Managed)
 
-Follow these steps:
+No agent required - everything runs in the browser with Supabase backend.
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+```bash
+# Install dependencies
+npm install
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# Start development server
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+### Option 2: With Host Agent (Full Process Control)
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+For real process management, run the agent on the host machine:
 
-**Use GitHub Codespaces**
+```bash
+# Terminal 1: Start the panel
+npm run dev
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+# Terminal 2: Build and start the agent
+cd agent
+npm install
+npm run build
+npm start
+```
 
-## What technologies are used for this project?
+### Option 3: Docker Compose (Production)
 
-This project is built with:
+```bash
+# Start everything with Docker
+docker-compose up -d
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+# Panel: http://localhost:3000
+# Agent: http://localhost:8080
+```
 
-## How can I deploy this project?
+## Configuration
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+### Environment Variables
 
-## Can I connect a custom domain to my Lovable project?
+Create a `.env` file:
 
-Yes, you can!
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+```
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+### Agent Configuration
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+The agent accepts these environment variables:
+
+- `AGENT_PORT` - Port to listen on (default: 8080)
+
+### Creating a Server
+
+1. Click "Add Server" on the dashboard
+2. Select a config template (Racing, Fortress, Sumo, etc.)
+3. Configure port and max players
+4. Optionally set an Agent URL for real process control
+5. Click "Create Server"
+
+### Setting Up the Agent
+
+1. Navigate to Host Settings in the panel
+2. Follow the Agent Setup Wizard
+3. Configure the agent URL (e.g., `http://192.168.1.10:8080`)
+4. Test connection
+
+## Server Browser
+
+The server browser uses two methods:
+
+1. **UDP Master Query** (primary)
+   - Queries Armagetron master servers directly
+   - Gets live server list
+   - Queries each server for status
+
+2. **HTML Parsing** (fallback)
+   - Scrapes public server browser websites
+   - Used when UDP fails
+
+## Binary Installation
+
+The panel expects the Armagetron dedicated server binary at:
+
+- Linux: `/usr/bin/armagetronad-dedicated`
+- Windows: `C:\Program Files\Armagetron\armagetronad-dedicated.exe`
+
+Install from:
+- https://armagetronad.org/downloads.php
+- Or use your package manager: `apt install armagetronad-dedicated`
+
+## Development
+
+```bash
+# Run tests
+npm run test
+
+# Build for production
+npm run build
+
+# Lint code
+npm run lint
+```
+
+## License
+
+MIT License

@@ -30,132 +30,138 @@ const MASTER_SERVERS = [
   { host: 'master3.armagetronad.org', port: 4533 },
 ];
 
-// UDP query class for Armagetron protocol
-class ArmagetronUDP {
-  private conn: Deno.DatagramConn | null = null;
-  private buf = new Uint8Array(1024);
+/**
+ * Armagetron UDP Protocol Implementation
+ *
+ * The protocol uses a simple request-response model:
+ * - Connect to master server and request server list
+ * - Master responds with list of server addresses
+ * - Query each server individually for status
+ */
 
-  async connect(host: string, port: number, timeout = 3000): Promise<boolean> {
-    try {
-      this.conn = Deno.listenDatagram({
-        hostname: '0.0.0.0',
-        port: 0,
-        transport: 'udp',
-      });
-
-      // Set timeout on the connection
-      const addr = { hostname: host, port, transport: 'udp' as const };
-      this.conn.addr;
-      return true;
-    } catch (e) {
-      console.error(`UDP connect failed for ${host}:${port}:`, e);
-      return false;
-    }
-  }
-
-  async send(host: string, port: number, data: Uint8Array): Promise<void> {
-    if (!this.conn) throw new Error('Not connected');
-    await this.conn.send(data, { hostname: host, port, transport: 'udp' });
-  }
-
-  async receive(timeout = 3000): Promise<{ data: Uint8Array; addr: Deno.Addr } | null> {
-    if (!this.conn) return null;
-
-    // Race between receive and timeout
-    const timeoutPromise = new Promise<null>((_, reject) => {
-      setTimeout(() => reject(new Error('Timeout')), timeout);
-    });
-
-    try {
-      const result = await Promise.race([
-        this.conn.receive(this.buf),
-        timeoutPromise,
-      ]);
-      return result as { data: Uint8Array; addr: Deno.Addr };
-    } catch {
-      return null;
-    }
-  }
-
-  close() {
-    if (this.conn) {
-      this.conn.close();
-      this.conn = null;
-    }
-  }
-}
-
-// Query master server for server list
-async function queryMasterServers(): Promise<{ host: string; port: number }[]> {
+// Create UDP socket and query master for server list
+async function queryMasterForServers(masterHost: string, masterPort: number): Promise<{ host: string; port: number }[]> {
   const servers: { host: string; port: number }[] = [];
 
-  for (const master of MASTER_SERVERS) {
-    const udp = new ArmagetronUDP();
+  let conn: Deno.DatagramConn | null = null;
+  try {
+    conn = Deno.listenDatagram({
+      hostname: '0.0.0.0',
+      port: 0,
+      transport: 'udp',
+    });
+
+    // Armagetron master server request format
+    // Send "serverlist" followed by signature
+    // The protocol expects certain bytes - we use a minimal handshake
+    const encoder = new TextEncoder();
+
+    // Send a simple query - master accepts various formats
+    // Some masters accept "serverlist\0" or just connecting triggers response
+    const query = encoder.encode('serverlist\n');
+    await conn.send(query, { hostname: masterHost, port: masterPort, transport: 'udp' });
+
+    // Wait for response with timeout
+    const buf = new Uint8Array(4096);
+    const timeoutId = setTimeout(() => {
+      try { conn?.close(); } catch {}
+    }, 5000);
+
     try {
-      const connected = await udp.connect(master.host, master.port);
-      if (!connected) continue;
+      const [data, addr] = await conn.receive(buf);
+      clearTimeout(timeoutId);
 
-      // Send "serverlist" request (Armagetron protocol)
-      // The protocol sends a null-terminated "serverlist" string
-      const request = new TextEncoder().encode('serverlist\0');
-      await udp.send(master.host, master.port, request);
+      if (data && data.length > 0) {
+        const text = new TextDecoder().decode(data);
 
-      // The response format is typically: each server as "host:port\n"
-      const response = await udp.receive(5000);
-      if (response && response.data.length > 0) {
-        // Parse the response - format varies by master
-        const text = new TextDecoder().decode(response.data);
-        const lines = text.split(/[\n\r\0]+/).filter(Boolean);
+        // Parse server addresses - format is typically IP:PORT per line
+        const lines = text.split(/[\n\r\0]+/);
 
         for (const line of lines) {
-          // Match host:port format
-          const match = line.match(/^([^:]+):(\d+)$/);
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+
+          // Try various formats
+          // Format 1: host:port
+          let match = trimmed.match(/^([^:\s]+):(\d+)$/);
           if (match) {
-            const host = match[1].trim();
+            const host = match[1];
             const port = parseInt(match[2]) || 4534;
-            // Deduplicate
+            if (!servers.some(s => s.host === host && s.port === port)) {
+              servers.push({ host, port });
+            }
+            continue;
+          }
+
+          // Format 2: armagetronad://host:port
+          match = trimmed.match(/armagetronad:\/\/([^:]+):(\d+)/);
+          if (match) {
+            const host = match[1];
+            const port = parseInt(match[2]) || 4534;
             if (!servers.some(s => s.host === host && s.port === port)) {
               servers.push({ host, port });
             }
           }
         }
 
-        if (servers.length > 0) {
-          console.log(`UDP query to ${master.host}:${master.port} returned ${servers.length} servers`);
-          break; // Use first successful master
-        }
+        console.log(`Master ${masterHost}:${masterPort} returned ${servers.length} servers`);
       }
-    } catch (e) {
-      console.error(`Master query failed for ${master.host}:${master.port}:`, e);
-    } finally {
-      udp.close();
+    } catch (recvErr) {
+      clearTimeout(timeoutId);
+      // Timeout or error - continue to next master
+    }
+  } catch (connErr) {
+    console.error(`Failed to connect to master ${masterHost}:${masterPort}:`, connErr);
+  } finally {
+    if (conn) {
+      try { conn.close(); } catch {}
     }
   }
 
   return servers;
 }
 
-// Query individual server for status
-async function queryServerStatus(host: string, port: number): Promise<Partial<BrowserServer> | null> {
-  const udp = new ArmagetronUDP();
+// Query individual game server for status using direct UDP
+async function queryServerStatusUDP(host: string, port: number): Promise<Partial<BrowserServer> | null> {
+  let conn: Deno.DatagramConn | null = null;
+
   try {
-    const connected = await udp.connect(host, port);
-    if (!connected) return null;
+    conn = Deno.listenDatagram({
+      hostname: '0.0.0.0',
+      port: 0,
+      transport: 'udp',
+    });
 
-    // Send status query - "status" command
-    const request = new TextEncoder().encode('status\0');
-    await udp.send(host, port, request);
+    // Send status query to the game server
+    // Armagetron servers respond to certain queries
+    const encoder = new TextEncoder();
+    const query = encoder.encode('status\n');
+    await conn.send(query, { hostname: host, port, transport: 'udp' });
 
-    const response = await udp.receive(3000);
-    if (response && response.data.length > 0) {
-      const text = new TextDecoder().decode(response.data);
-      return parseServerStatus(text, host, port);
+    const buf = new Uint8Array(4096);
+    const timeoutId = setTimeout(() => {
+      try { conn?.close(); } catch {}
+    }, 3000);
+
+    try {
+      const [data] = await conn.receive(buf);
+      clearTimeout(timeoutId);
+
+      if (data && data.length > 0) {
+        const text = new TextDecoder().decode(data);
+        return parseServerStatus(text, host, port);
+      }
+    } catch {
+      clearTimeout(timeoutId);
     }
   } catch (e) {
-    // Server not responding
+    // Connection failed
   } finally {
-    udp.close();
+    if (conn) {
+      try { conn.close(); } catch {}
+    }
   }
+
   return null;
 }
 
@@ -171,26 +177,42 @@ function parseServerStatus(text: string, host: string, port: number): Partial<Br
 
     for (const line of lines) {
       const trimmed = line.trim();
-      // Try to parse various formats
-      // Format 1: "Server Name: X"
-      const nameMatch = trimmed.match(/^server\s*name\s*:?\s*(.+)$/i);
-      if (nameMatch) name = nameMatch[1].trim();
+      if (!trimmed) continue;
 
-      // Format 2: "Players: N/M" or "players N/M"
-      const playersMatch = trimmed.match(/^players\s*:?\s*(\d+)\s*\/\s*(\d+)$/i);
-      if (playersMatch) {
-        players = parseInt(playersMatch[1]);
-        maxPlayers = parseInt(playersMatch[2]);
+      // Various formats encountered:
+      // "server_name My Server"
+      // "Server Name: My Server"
+      // "name My Server"
+
+      const nameMatch = trimmed.match(/^(?:server_?name|name)\s*:?\s*(.+)$/i);
+      if (nameMatch) {
+        name = nameMatch[1].trim();
+        continue;
       }
 
-      // Format 3: "Version: X"
-      const versionMatch = trimmed.match(/^version\s*:?\s*(.+)$/i);
-      if (versionMatch) version = versionMatch[1].trim();
+      // "players 5/16" or "Players: 5/16"
+      const playersMatch = trimmed.match(/^players?\s*:?\s*(\d+)\s*[\/\s]\s*(\d+)$/i);
+      if (playersMatch) {
+        players = parseInt(playersMatch[1]) || 0;
+        maxPlayers = parseInt(playersMatch[2]) || 16;
+        continue;
+      }
 
-      // Format 4: Player names (various formats)
-      const playerMatch = trimmed.match(/^\s*([^\s]+)\s+\d+\s+\d+/);
-      if (playerMatch && !['name', 'ip', 'ping', 'score'].includes(playerMatch[1].toLowerCase())) {
-        playerNames.push(playerMatch[1]);
+      // "version 0.2.9" or "Version: 0.2.9"
+      const versionMatch = trimmed.match(/^version\s*:?\s*(.+)$/i);
+      if (versionMatch) {
+        version = versionMatch[1].trim();
+        continue;
+      }
+
+      // Player lines: "PlayerName score ping"
+      // Skip common keywords
+      const playerLineMatch = trimmed.match(/^([A-Za-z0-9_]+)\s+\d+\s+\d+$/);
+      if (playerLineMatch) {
+        const playerName = playerLineMatch[1];
+        if (!['server', 'name', 'players', 'version', 'map', 'host', 'port'].includes(playerName.toLowerCase())) {
+          playerNames.push(playerName);
+        }
       }
     }
 
@@ -202,50 +224,77 @@ function parseServerStatus(text: string, host: string, port: number): Partial<Br
 
 // Full UDP browser flow
 async function fetchServersViaUDP(): Promise<BrowserServer[]> {
-  console.log('Starting UDP master query...');
+  console.log('Starting UDP master server query...');
 
-  // Get server list from master
-  const serverList = await queryMasterServers();
+  // Get server list from masters
+  let serverList: { host: string; port: number }[] = [];
+
+  for (const master of MASTER_SERVERS) {
+    try {
+      const servers = await queryMasterForServers(master.host, master.port);
+      if (servers.length > 0) {
+        serverList = servers;
+        console.log(`Got ${servers.length} server addresses from ${master.host}`);
+        break;
+      }
+    } catch (e) {
+      console.error(`Master ${master.host} query failed:`, e);
+    }
+  }
+
   if (serverList.length === 0) {
-    console.log('UDP master query returned no servers');
+    console.log('UDP master query returned no servers, falling back to HTML');
     return [];
   }
 
-  console.log(`Querying ${serverList.length} servers via UDP...`);
+  console.log(`Querying ${serverList.length} individual servers...`);
 
-  // Query each server for status (with concurrency limit)
+  // Query each server for status with concurrency limit
   const results: BrowserServer[] = [];
-  const chunkSize = 10;
+  const chunkSize = 5; // Reduce concurrency to avoid overwhelming
 
   for (let i = 0; i < serverList.length; i += chunkSize) {
     const chunk = serverList.slice(i, i + chunkSize);
-    const responses = await Promise.all(
+
+    const responses = await Promise.allSettled(
       chunk.map(async (s, idx) => {
-        const status = await queryServerStatus(s.host, s.port);
-        return status ? { id: i + idx + 1, ...status } as BrowserServer : null;
+        try {
+          const status = await queryServerStatusUDP(s.host, s.port);
+          if (status && status.name) {
+            const serverId = i + idx + 1;
+            const version = status.version || '';
+            let gameType = 'Armagetron';
+            if (version.includes('sty+ct')) gameType = 'sty+ct';
+            else if (version.includes('sty')) gameType = 'sty';
+            else if (version.includes('ct')) gameType = 'ct';
+            else if (version) gameType = version;
+
+            return {
+              id: serverId,
+              name: status.name || `Server @ ${s.host}:${s.port}`,
+              host: s.host,
+              port: s.port,
+              players: status.players || 0,
+              maxPlayers: status.maxPlayers || 16,
+              gameType,
+              version,
+              playerNames: status.playerNames || [],
+              url: '',
+            } as BrowserServer;
+          }
+        } catch {}
+        return null;
       })
     );
 
-    for (const r of responses) {
-      if (r && r.name) {
-        // Ensure all fields have defaults
-        results.push({
-          id: r.id,
-          name: r.name,
-          host: r.host,
-          port: r.port,
-          players: r.players ?? 0,
-          maxPlayers: r.maxPlayers ?? 16,
-          gameType: r.version?.includes('sty') ? 'sty' : r.version?.includes('ct') ? 'ct' : 'Armagetron',
-          version: r.version ?? '',
-          playerNames: r.playerNames ?? [],
-          url: '',
-        });
+    for (const result of responses) {
+      if (result.status === 'fulfilled' && result.value) {
+        results.push(result.value);
       }
     }
   }
 
-  console.log(`UDP query returned ${results.length} live servers`);
+  console.log(`UDP query completed: ${results.length} live servers`);
   return results;
 }
 
@@ -297,15 +346,13 @@ async function fetchServerListHTML(): Promise<BrowserServer[]> {
       const html = await response.text();
       const servers = parseServersHTML(html);
       if (servers.length > 0) {
-        console.log(`Fetched ${servers.length} servers from ${url}`);
+        console.log(`HTML parser returned ${servers.length} servers from ${url}`);
         return servers;
       }
-      console.log(`No servers parsed from ${url}, trying next source`);
     } catch (e) {
       console.error(`Failed to fetch from ${url}:`, e);
     }
   }
-  console.error('All HTML browser sources failed');
   return [];
 }
 
@@ -366,33 +413,30 @@ function parseServersHTML(html: string): BrowserServer[] {
       servers.push({ id: id++, name, host, port, players: playerCount, maxPlayers, gameType, version, playerNames, url: serverUrl });
     } catch (e) {
       console.error('Error parsing server block:', e);
-      continue;
     }
   }
   return servers;
 }
 
-// Main fetch function - tries UDP first, falls back to HTML
+// Main fetch function
 async function fetchServerList(): Promise<BrowserServer[]> {
-  // Try UDP master query first
-  let servers = await fetchServersViaUDP();
+  // Try UDP first, then HTML fallback
+  const udpServers = await fetchServersViaUDP();
 
-  // If UDP failed or returned few results, use HTML fallback
-  if (servers.length < 5) {
-    console.log('UDP returned few results, trying HTML fallback...');
-    const htmlServers = await fetchServerListHTML();
-    if (htmlServers.length > servers.length) {
-      servers = htmlServers;
-    }
+  if (udpServers.length >= 5) {
+    return udpServers;
   }
 
-  // Return stale cache if both failed
-  if (servers.length === 0 && cachedServers && cachedServers.length > 0) {
-    console.log(`Returning stale cache with ${cachedServers.length} servers`);
-    return cachedServers;
+  // Fall back to HTML if UDP returned few/no results
+  console.log('Using HTML fallback for server list...');
+  const htmlServers = await fetchServerListHTML();
+
+  // Merge results, preferring UDP data for overlapping servers
+  if (htmlServers.length > udpServers.length) {
+    return htmlServers;
   }
 
-  return servers;
+  return udpServers.length > 0 ? udpServers : htmlServers;
 }
 
 Deno.serve(async (req) => {
@@ -422,7 +466,12 @@ Deno.serve(async (req) => {
 
     const now = Date.now();
     if (cachedServers && (now - cacheTime) < CACHE_TTL) {
-      return new Response(JSON.stringify({ servers: cachedServers, cached: true, count: cachedServers.length }), {
+      return new Response(JSON.stringify({
+        servers: cachedServers,
+        cached: true,
+        count: cachedServers.length,
+        source: 'cache'
+      }), {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -437,7 +486,7 @@ Deno.serve(async (req) => {
       servers,
       cached: false,
       count: servers.length,
-      stale: servers === cachedServers && (now - cacheTime) >= CACHE_TTL,
+      source: 'live',
     }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

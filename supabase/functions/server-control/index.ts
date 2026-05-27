@@ -183,11 +183,39 @@ async function proxyToAgent(
   const payload: Record<string, unknown> = { action, serverId: server.id };
   if (command) payload.command = command;
 
+  // On start, send full config to agent
+  if (action === 'start') {
+    payload.config = {
+      id: server.id,
+      name: server.name,
+      executablePath: server.executable_path,
+      dataDir: server.data_dir,
+      configDir: server.config_dir,
+      port: server.port,
+      maxPlayers: server.max_players,
+      autoRestart: server.auto_restart,
+    };
+
+    // Fetch all config key-values for this server
+    const { data: configs } = await supabase
+      .from('server_configs')
+      .select('key, value')
+      .eq('server_id', server.id);
+
+    if (configs && configs.length > 0) {
+      const configObj: Record<string, string> = {};
+      for (const c of configs) {
+        configObj[c.key] = c.value;
+      }
+      payload.configs = configObj;
+    }
+  }
+
   const agentResp = await fetch(`${agentUrl}/control`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(30000), // Increased timeout for start
   });
 
   const agentData = await parseJsonSafe(agentResp);

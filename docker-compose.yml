@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # Frontend Panel
+  panel:
+    build:
+      context: .
+      dockerfile: Dockerfile.panel
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_SUPABASE_URL=${SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+    depends_on:
+      - agent
+    networks:
+      - retrocycles-net
+
+  # Host Agent for process management
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile.agent
+    ports:
+      - "8080:8080"
+    volumes:
+      # Game server data
+      - armagetron-data:/usr/share/armagetronad
+      - armagetron-config:/etc/armagetronad
+      # Binary path
+      - /usr/bin/armagetronad-dedicated:/usr/bin/armagetronad-dedicated:ro
+    environment:
+      - AGENT_PORT=8080
+    privileged: true  # Required for PTY spawning
+    networks:
+      - retrocycles-net
+
+  # Optional: Local game server for testing
+  gameserver:
+    image: retrocycles/server:latest
+    build:
+      context: ./server
+      dockerfile: Dockerfile.gameserver
+    ports:
+      - "4534:4534/udp"
+      - "4534:4534/tcp"
+    volumes:
+      - armagetron-data:/usr/share/armagetronad
+      - armagetron-config:/etc/armagetronad
+    environment:
+      - SERVER_NAME=RetroCycles Local Server
+      - MAX_PLAYERS=16
+      - TALK_TO_MASTER=0
+    networks:
+      - retrocycles-net
+
+networks:
+  retrocycles-net:
+    driver: bridge
+
+volumes:
+  armagetron-data:
+  armagetron-config:
