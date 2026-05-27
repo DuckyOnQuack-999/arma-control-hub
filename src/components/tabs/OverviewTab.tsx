@@ -129,7 +129,7 @@ export default function OverviewTab({ server, onTabChange }: { server: Server; o
           </div>
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-muted-foreground">
-              {server.agent_url ? <Wifi className="h-3.5 w-3.5 text-neon-green" /> : <WifiOff className="h-3.5 w-3.5" />}
+              {server.agent_url ? <Wifi className="h-3.5 w-3.5 text-success" /> : <WifiOff className="h-3.5 w-3.5" />}
               Agent
             </span>
             <span className="font-mono text-xs truncate max-w-48">

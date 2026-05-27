@@ -6,10 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
-import {
-  Folder, File, ChevronRight, ArrowLeft, Save, X,
-  Edit2, Trash2, FolderPlus, FilePlus, RefreshCw, Home
-} from 'lucide-react';
+import { Folder, File, ChevronRight, ArrowLeft, Save, X, CreditCard as Edit2, Trash2, FolderPlus, FilePlus, RefreshCw, Chrome as Home } from 'lucide-react';
 
 interface FileEntry {
   name: string;
@@ -142,7 +139,7 @@ const FilesTab = ({ serverId, agentUrl }: Props) => {
             <span className="font-mono text-sm text-muted-foreground">{editingFile.path}</span>
           </div>
           <div className="flex items-center gap-2">
-            {hasChanges && <span className="text-xs text-neon-red">• Unsaved changes</span>}
+            {hasChanges && <span className="text-xs text-destructive">• Unsaved changes</span>}
             <Button size="sm" onClick={handleSaveFile} disabled={saving || !hasChanges}>
               <Save className="h-4 w-4 mr-1" /> Save
             </Button>

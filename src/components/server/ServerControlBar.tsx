@@ -25,15 +25,15 @@ export function ServerControlBar({ status, onStart, onStop, onRestart, onKill, l
   return (
     <div className="flex items-center gap-2">
       <Button size="sm" disabled={!canStart || loading} onClick={onStart}
-        className="bg-neon-green/20 text-neon-green border border-neon-green/50 hover:bg-neon-green/30">
+        className="bg-success/10 text-success border border-success/30 hover:bg-success/20">
         <Play className="h-3.5 w-3.5" /> Start
       </Button>
       <Button size="sm" disabled={!isRunning || loading} onClick={() => setConfirmAction('stop')}
-        className="bg-neon-red/20 text-neon-red border border-neon-red/50 hover:bg-neon-red/30">
+        className="bg-destructive/10 text-destructive border border-destructive/30 hover:bg-destructive/20">
         <Square className="h-3.5 w-3.5" /> Stop
       </Button>
       <Button size="sm" disabled={!canRestart || loading} onClick={() => setConfirmAction('restart')}
-        className="bg-neon-yellow/20 text-neon-yellow border border-neon-yellow/50 hover:bg-neon-yellow/30">
+        className="bg-warning/10 text-warning border border-warning/30 hover:bg-warning/20">
         <RotateCcw className="h-3.5 w-3.5" /> Restart
       </Button>
       <Button size="sm" variant="destructive" disabled={!canKill || loading} onClick={() => setConfirmAction('kill')}>

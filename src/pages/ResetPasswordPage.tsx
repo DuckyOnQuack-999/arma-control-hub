@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Terminal, CheckCircle } from 'lucide-react';
+import { Terminal, CircleCheck as CheckCircle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 const ResetPasswordPage = () => {
@@ -74,7 +74,7 @@ const ResetPasswordPage = () => {
       <Card className="relative z-10 w-full max-w-md border-primary/30 bg-card glow-cyan">
         <CardHeader className="text-center">
           <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full border border-primary/50 bg-primary/10">
-            {success ? <CheckCircle className="h-7 w-7 text-neon-green" /> : <Terminal className="h-7 w-7 text-primary" />}
+            {success ? <CheckCircle className="h-7 w-7 text-success" /> : <Terminal className="h-7 w-7 text-primary" />}
           </div>
           <CardTitle className="font-display text-xl tracking-wider text-primary text-glow-cyan">
             {success ? 'PASSWORD UPDATED' : 'RESET PASSWORD'}

@@ -59,7 +59,7 @@ export default function MetricsTab({ serverId }: { serverId: number }) {
         <div className="grid grid-cols-3 gap-3">
           <Card className="border-border bg-card">
             <CardContent className="flex items-center gap-3 p-4">
-              <Cpu className="h-8 w-8 text-neon-red" />
+              <Cpu className="h-8 w-8 text-destructive" />
               <div>
                 <div className="text-2xl font-display font-bold">{latest.cpu.toFixed(1)}%</div>
                 <div className="text-xs text-muted-foreground">CPU Usage</div>
@@ -68,7 +68,7 @@ export default function MetricsTab({ serverId }: { serverId: number }) {
           </Card>
           <Card className="border-border bg-card">
             <CardContent className="flex items-center gap-3 p-4">
-              <HardDrive className="h-8 w-8 text-neon-blue" />
+              <HardDrive className="h-8 w-8 text-info" />
               <div>
                 <div className="text-2xl font-display font-bold">{latest.memory.toFixed(0)} MB</div>
                 <div className="text-xs text-muted-foreground">Memory</div>
@@ -77,7 +77,7 @@ export default function MetricsTab({ serverId }: { serverId: number }) {
           </Card>
           <Card className="border-border bg-card">
             <CardContent className="flex items-center gap-3 p-4">
-              <Users className="h-8 w-8 text-neon-green" />
+              <Users className="h-8 w-8 text-success" />
               <div>
                 <div className="text-2xl font-display font-bold">{latest.players}</div>
                 <div className="text-xs text-muted-foreground">Players</div>
@@ -93,11 +93,11 @@ export default function MetricsTab({ serverId }: { serverId: number }) {
             <h3 className="font-display text-sm mb-3">CPU Usage (%)</h3>
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(240 10% 18%)" />
-                <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'hsl(220 10% 55%)' }} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'hsl(220 10% 55%)' }} />
-                <Tooltip contentStyle={{ backgroundColor: 'hsl(240 14% 9%)', border: '1px solid hsl(240 10% 18%)', borderRadius: 8, fontSize: 12 }} />
-                <Line type="monotone" dataKey="cpu" stroke="hsl(0 100% 60%)" strokeWidth={2} dot={false} />
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
+                <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }} />
+                <Line type="monotone" dataKey="cpu" stroke="hsl(var(--destructive))" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </Card>
@@ -106,11 +106,11 @@ export default function MetricsTab({ serverId }: { serverId: number }) {
             <h3 className="font-display text-sm mb-3">Memory (MB)</h3>
             <ResponsiveContainer width="100%" height={200}>
               <AreaChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(240 10% 18%)" />
-                <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'hsl(220 10% 55%)' }} />
-                <YAxis tick={{ fontSize: 10, fill: 'hsl(220 10% 55%)' }} />
-                <Tooltip contentStyle={{ backgroundColor: 'hsl(240 14% 9%)', border: '1px solid hsl(240 10% 18%)', borderRadius: 8, fontSize: 12 }} />
-                <Area type="monotone" dataKey="memory" stroke="hsl(220 100% 60%)" fill="hsl(220 100% 60% / 0.2)" strokeWidth={2} />
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
+                <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
+                <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }} />
+                <Area type="monotone" dataKey="memory" stroke="hsl(var(--info))" fill="hsl(var(--info) / 0.2)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           </Card>
@@ -119,11 +119,11 @@ export default function MetricsTab({ serverId }: { serverId: number }) {
             <h3 className="font-display text-sm mb-3">Player Count</h3>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(240 10% 18%)" />
-                <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'hsl(220 10% 55%)' }} />
-                <YAxis tick={{ fontSize: 10, fill: 'hsl(220 10% 55%)' }} />
-                <Tooltip contentStyle={{ backgroundColor: 'hsl(240 14% 9%)', border: '1px solid hsl(240 10% 18%)', borderRadius: 8, fontSize: 12 }} />
-                <Bar dataKey="players" fill="hsl(110 100% 62% / 0.7)" radius={[2, 2, 0, 0]} />
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
+                <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
+                <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }} />
+                <Bar dataKey="players" fill="hsl(var(--success) / 0.7)" radius={[2, 2, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </Card>

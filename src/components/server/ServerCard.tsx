@@ -56,7 +56,7 @@ export function ServerCard({ server }: { server: Server }) {
 
   return (
     <Card
-      className="group cursor-pointer border-border bg-card transition-all hover:border-primary/50 hover:glow-cyan"
+      className="group cursor-pointer border-border bg-card transition-all hover:border-primary/50"
       onClick={() => navigate(`/servers/${server.id}`)}
     >
       <CardContent className="p-5">
@@ -66,9 +66,9 @@ export function ServerCard({ server }: { server: Server }) {
             <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
               Port {server.port}
               {hasAgent ? (
-                <span className="inline-flex items-center gap-0.5 text-neon-green"><Wifi className="h-3 w-3" /> Agent</span>
+                <span className="inline-flex items-center gap-0.5 text-success"><Wifi className="h-3 w-3" /> Agent</span>
               ) : (
-                <span className="inline-flex items-center gap-0.5"><Monitor className="h-3 w-3" /> Sim</span>
+                <span className="inline-flex items-center gap-0.5"><Monitor className="h-3 w-3" /> Panel</span>
               )}
             </p>
           </div>
@@ -85,11 +85,11 @@ export function ServerCard({ server }: { server: Server }) {
                 <span className="text-muted-foreground">/ {server.max_players}</span>
               </div>
               <div className="flex items-center gap-1.5 text-xs">
-                <Cpu className="h-3.5 w-3.5 text-neon-red" />
+                <Cpu className="h-3.5 w-3.5 text-destructive" />
                 <span className="text-foreground font-semibold">{server.cpu_percent.toFixed(1)}%</span>
               </div>
               <div className="flex items-center gap-1.5 text-xs">
-                <HardDrive className="h-3.5 w-3.5 text-neon-blue" />
+                <HardDrive className="h-3.5 w-3.5 text-info" />
                 <span className="text-foreground font-semibold">{server.memory_mb.toFixed(0)}MB</span>
               </div>
             </div>
@@ -110,13 +110,13 @@ export function ServerCard({ server }: { server: Server }) {
 
         <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-border">
           <Button size="icon" variant="ghost" className="h-7 w-7" disabled={!isStopped} onClick={e => handleAction(e, 'start')}>
-            <Play className="h-3.5 w-3.5 text-neon-green" />
+            <Play className="h-3.5 w-3.5 text-success" />
           </Button>
           <Button size="icon" variant="ghost" className="h-7 w-7" disabled={!isRunning} onClick={e => handleAction(e, 'stop')}>
-            <Square className="h-3.5 w-3.5 text-neon-red" />
+            <Square className="h-3.5 w-3.5 text-destructive" />
           </Button>
           <Button size="icon" variant="ghost" className="h-7 w-7" disabled={!isRunning} onClick={e => handleAction(e, 'restart')}>
-            <RotateCcw className="h-3.5 w-3.5 text-neon-yellow" />
+            <RotateCcw className="h-3.5 w-3.5 text-warning" />
           </Button>
           {user?.role === 'admin' && (
             <>

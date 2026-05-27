@@ -11,13 +11,13 @@ import { toast } from '@/hooks/use-toast';
 import { configKeys } from '@/data/configKeys';
 
 const lineColors: Record<ConsoleLineType, string> = {
-  error: 'text-neon-red',
-  warning: 'text-neon-yellow',
-  join: 'text-neon-green',
+  error: 'text-destructive',
+  warning: 'text-warning',
+  join: 'text-success',
   leave: 'text-muted-foreground',
-  chat: 'text-neon-blue',
+  chat: 'text-info',
   system: 'text-foreground',
-  kill: 'text-neon-purple',
+  kill: 'text-purple-500',
   info: 'text-primary',
 };
 
@@ -223,11 +223,11 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <div className="flex items-center gap-2 text-xs">
           {connected ? (
-            <span className="flex items-center gap-1.5 text-neon-green">
+            <span className="flex items-center gap-1.5 text-success">
               <Wifi className="h-3.5 w-3.5" /> {agentUrl ? 'Live (Agent)' : 'Connected'}
             </span>
           ) : (
-            <span className="flex items-center gap-1.5 text-neon-red"><WifiOff className="h-3.5 w-3.5" /> Disconnected</span>
+            <span className="flex items-center gap-1.5 text-destructive"><WifiOff className="h-3.5 w-3.5" /> Disconnected</span>
           )}
           <span className="text-muted-foreground">· {lines.length} lines</span>
         </div>

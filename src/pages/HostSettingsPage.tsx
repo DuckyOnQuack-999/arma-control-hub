@@ -99,7 +99,7 @@ function RegisteredHosts({ servers }: { servers: ServerType[] }) {
               {url === 'No Agent' ? (
                 <><WifiOff className="h-4 w-4 text-muted-foreground" /> No Agent (Panel Managed)</>
               ) : (
-                <><Wifi className="h-4 w-4 text-neon-green" /> <span className="font-mono text-xs">{url}</span></>
+                <><Wifi className="h-4 w-4 text-success" /> <span className="font-mono text-xs">{url}</span></>
               )}
             </CardTitle>
           </CardHeader>
@@ -117,7 +117,7 @@ function RegisteredHosts({ servers }: { servers: ServerType[] }) {
                 </div>
                 <div className="flex items-center gap-2">
                   {results[s.id] && (
-                    <span className={`text-[10px] ${results[s.id].reachable ? 'text-neon-green' : 'text-destructive'}`}>
+                    <span className={`text-[10px] ${results[s.id].reachable ? 'text-success' : 'text-destructive'}`}>
                       {results[s.id].message}
                     </span>
                   )}
@@ -641,7 +641,7 @@ function ApiReference() {
           <div className="space-y-2">
             {agentEndpoints.map(ep => (
               <div key={ep.path + ep.method} className="flex items-start gap-3 rounded-md border border-border p-2.5">
-                <Badge variant="outline" className={`text-[10px] shrink-0 font-mono ${ep.method === 'GET' ? 'border-neon-green/30 text-neon-green' : 'border-primary/30 text-primary'}`}>
+                <Badge variant="outline" className={`text-[10px] shrink-0 font-mono ${ep.method === 'GET' ? 'border-success/30 text-success' : 'border-primary/30 text-primary'}`}>
                   {ep.method}
                 </Badge>
                 <div>

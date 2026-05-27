@@ -5,9 +5,7 @@ import { NavLink } from '@/components/NavLink';
 import { useAuthStore } from '@/stores/authStore';
 import { getServers, getRecentEventCount } from '@/lib/supabaseApi';
 import { supabase } from '@/integrations/supabase/client';
-import {
-  LayoutDashboard, Globe, Settings, Terminal, LogOut, Menu, X, ChevronDown, Bell, Server, Wand2,
-} from 'lucide-react';
+import { LayoutDashboard, Globe, Settings, Terminal, LogOut, Menu, X, ChevronDown, Bell, Server, Wand as Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -158,7 +156,7 @@ export function AppShell() {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48 border-border bg-card">
-              <DropdownMenuItem onClick={handleLogout} className="text-neon-red">
+              <DropdownMenuItem onClick={handleLogout} className="text-destructive">
                 <LogOut className="h-4 w-4 mr-2" /> Logout
               </DropdownMenuItem>
             </DropdownMenuContent>

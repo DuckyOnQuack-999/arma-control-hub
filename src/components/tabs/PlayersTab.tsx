@@ -98,7 +98,7 @@ export default function PlayersTab({ serverId }: { serverId: number }) {
                   <TableCell className="font-mono text-xs text-muted-foreground">{p.ip_address}</TableCell>
                   <TableCell className="text-right font-mono">{p.score}</TableCell>
                   <TableCell className="text-right">
-                    <span className={p.ping < 50 ? 'text-neon-green' : p.ping < 100 ? 'text-neon-yellow' : 'text-neon-red'}>
+                    <span className={p.ping < 50 ? 'text-success' : p.ping < 100 ? 'text-warning' : 'text-destructive'}>
                       {p.ping}ms
                     </span>
                   </TableCell>
@@ -106,10 +106,10 @@ export default function PlayersTab({ serverId }: { serverId: number }) {
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
                       <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setKickTarget(p.name)}>
-                        <UserX className="h-3.5 w-3.5 text-neon-yellow" />
+                        <UserX className="h-3.5 w-3.5 text-warning" />
                       </Button>
                       <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setBanTarget(p.name)}>
-                        <Ban className="h-3.5 w-3.5 text-neon-red" />
+                        <Ban className="h-3.5 w-3.5 text-destructive" />
                       </Button>
                       <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleSilence(p.name)}>
                         <VolumeX className="h-3.5 w-3.5 text-muted-foreground" />
@@ -148,7 +148,7 @@ export default function PlayersTab({ serverId }: { serverId: number }) {
                   <TableCell className="text-muted-foreground">{b.banned_by}</TableCell>
                   <TableCell className="text-xs">{b.expires_at ? new Date(b.expires_at).toLocaleDateString() : 'Permanent'}</TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" variant="ghost" className="text-xs text-neon-green" onClick={() => handleUnban(b.id)}>Unban</Button>
+                    <Button size="sm" variant="ghost" className="text-xs text-success" onClick={() => handleUnban(b.id)}>Unban</Button>
                   </TableCell>
                 </TableRow>
               ))}

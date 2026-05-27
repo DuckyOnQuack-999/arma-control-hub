@@ -9,23 +9,23 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { cn } from '@/lib/utils';
-import { CalendarIcon, FileText } from 'lucide-react';
+import { Calendar as CalendarIcon, FileText } from 'lucide-react';
 import { format } from 'date-fns';
 import type { EventType } from '@/data/types';
 
 const eventColors: Record<string, string> = {
-  player_join: 'bg-neon-green/20 text-neon-green border-neon-green/50',
+  player_join: 'bg-success/10 text-success border-success/30',
   player_leave: 'bg-muted text-muted-foreground border-border',
-  kill: 'bg-neon-purple/20 text-neon-purple border-neon-purple/50',
-  chat: 'bg-neon-blue/20 text-neon-blue border-neon-blue/50',
-  ban: 'bg-neon-red/20 text-neon-red border-neon-red/50',
-  kick: 'bg-neon-yellow/20 text-neon-yellow border-neon-yellow/50',
-  round_end: 'bg-primary/20 text-primary border-primary/50',
-  start: 'bg-neon-green/20 text-neon-green border-neon-green/50',
-  stop: 'bg-neon-red/20 text-neon-red border-neon-red/50',
-  crash: 'bg-neon-red/20 text-neon-red border-neon-red/50',
-  restart: 'bg-neon-yellow/20 text-neon-yellow border-neon-yellow/50',
-  command: 'bg-primary/20 text-primary border-primary/50',
+  kill: 'bg-purple-500/10 text-purple-500 border-purple-500/30',
+  chat: 'bg-info/10 text-info border-info/30',
+  ban: 'bg-destructive/10 text-destructive border-destructive/30',
+  kick: 'bg-warning/10 text-warning border-warning/30',
+  round_end: 'bg-primary/10 text-primary border-primary/30',
+  start: 'bg-success/10 text-success border-success/30',
+  stop: 'bg-destructive/10 text-destructive border-destructive/30',
+  crash: 'bg-destructive/10 text-destructive border-destructive/30',
+  restart: 'bg-warning/10 text-warning border-warning/30',
+  command: 'bg-primary/10 text-primary border-primary/30',
 };
 
 const PAGE_SIZE = 20;

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Server, Users, Cpu, HardDrive, Wifi, Clock, Wand2, Globe, Settings, Activity } from 'lucide-react';
+import { Plus, Server, Users, Cpu, HardDrive, Wifi, Clock, Wand as Wand2, Globe, Settings, Activity } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ServerCard } from '@/components/server/ServerCard';
@@ -13,10 +13,10 @@ import { useQuery } from '@tanstack/react-query';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 const STATUS_COLORS: Record<string, string> = {
-  online: 'hsl(142, 71%, 45%)',
-  offline: 'hsl(0, 0%, 45%)',
-  crashed: 'hsl(0, 84%, 60%)',
-  starting: 'hsl(48, 96%, 53%)',
+  online: 'hsl(var(--success))',
+  offline: 'hsl(var(--muted-foreground))',
+  crashed: 'hsl(var(--destructive))',
+  starting: 'hsl(var(--warning))',
 };
 
 const DashboardPage = () => {
@@ -64,11 +64,11 @@ const DashboardPage = () => {
   if (isLoading && servers.length === 0) return <LoadingSpinner />;
 
   const stats = [
-    { icon: Server, label: 'Servers Online', value: `${onlineCount} / ${servers.length}`, color: 'text-neon-green' },
+    { icon: Server, label: 'Servers Online', value: `${onlineCount} / ${servers.length}`, color: 'text-success' },
     { icon: Users, label: 'Total Players', value: String(totalPlayers), color: 'text-primary' },
-    { icon: Cpu, label: 'Avg CPU', value: `${avgCpu.toFixed(1)}%`, color: 'text-neon-red' },
-    { icon: HardDrive, label: 'Total Memory', value: `${totalMemory.toFixed(0)} MB`, color: 'text-neon-blue' },
-    { icon: Wifi, label: 'Agent Connected', value: `${agentCount} / ${servers.length}`, color: 'text-neon-yellow' },
+    { icon: Cpu, label: 'Avg CPU', value: `${avgCpu.toFixed(1)}%`, color: 'text-destructive' },
+    { icon: HardDrive, label: 'Total Memory', value: `${totalMemory.toFixed(0)} MB`, color: 'text-info' },
+    { icon: Wifi, label: 'Agent Connected', value: `${agentCount} / ${servers.length}`, color: 'text-warning' },
     { icon: Clock, label: 'Total Uptime', value: formatUptime(totalUptime), color: 'text-primary' },
   ];
 

@@ -79,7 +79,7 @@ const ServerDetailPage = () => {
           <h1 className="font-display text-xl font-bold tracking-wide">{server.name}</h1>
           <ServerStatusBadge status={server.status as ServerStatus} />
           {server.agent_url ? (
-            <span className="flex items-center gap-1 text-[10px] text-neon-green"><Wifi className="h-3 w-3" /> Agent</span>
+            <span className="flex items-center gap-1 text-[10px] text-success"><Wifi className="h-3 w-3" /> Agent</span>
           ) : (
             <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><Monitor className="h-3 w-3" /> Panel Managed</span>
           )}
@@ -98,9 +98,9 @@ const ServerDetailPage = () => {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
             { icon: Users, label: 'Players', value: `${server.player_count} / ${server.max_players}`, color: 'text-primary' },
-            { icon: Cpu, label: 'CPU', value: `${(server.cpu_percent ?? 0).toFixed(1)}%`, color: 'text-neon-red' },
-            { icon: HardDrive, label: 'Memory', value: `${(server.memory_mb ?? 0).toFixed(0)} MB`, color: 'text-neon-blue' },
-            { icon: Clock, label: 'Uptime', value: formatUptime(server.uptime ?? 0), color: 'text-neon-green' },
+            { icon: Cpu, label: 'CPU', value: `${(server.cpu_percent ?? 0).toFixed(1)}%`, color: 'text-destructive' },
+            { icon: HardDrive, label: 'Memory', value: `${(server.memory_mb ?? 0).toFixed(0)} MB`, color: 'text-info' },
+            { icon: Clock, label: 'Uptime', value: formatUptime(server.uptime ?? 0), color: 'text-success' },
           ].map(stat => (
             <div key={stat.label} className="rounded-lg border border-border bg-card p-3">
               <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">

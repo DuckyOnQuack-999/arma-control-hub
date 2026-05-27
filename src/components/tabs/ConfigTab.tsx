@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Save, RotateCcw, Info, AlertTriangle } from 'lucide-react';
+import { Save, RotateCcw, Info, TriangleAlert as AlertTriangle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import type { ServerStatus, ConfigSection } from '@/data/types';
@@ -84,7 +84,7 @@ export default function ConfigTab({ serverId, serverStatus }: { serverId: number
   return (
     <div className="space-y-4">
       {hasChanges && (
-        <div className="flex items-center gap-2 rounded-md border border-neon-yellow/50 bg-neon-yellow/10 px-3 py-2 text-xs text-neon-yellow">
+        <div className="flex items-center gap-2 rounded-md border border-warning/50 bg-warning/10 px-3 py-2 text-xs text-warning">
           <AlertTriangle className="h-3.5 w-3.5" /> Unsaved changes
         </div>
       )}
