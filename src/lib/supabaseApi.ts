@@ -1,5 +1,6 @@
 // Supabase API layer — real DB + edge function operations
 import { supabase } from '@/integrations/supabase/client';
+import type { Tables } from '@/integrations/supabase/types';
 import type { Server, Ban, Player, ServerEvent, MapFile, MetricPoint, BrowserServer, ConsoleLine } from '@/data/types';
 
 // ─── Servers ─────────────────────────────────────────────
@@ -268,16 +269,16 @@ export async function deleteUserRole(userId: string): Promise<void> {
 
 // ─── Profiles ─────────────────────────────────────────────
 
-export async function getProfiles(): Promise<Array<{ id: string; email: string; display_name: string | null }>> {
+export async function getProfiles() {
   const { data, error } = await supabase.from('profiles').select('*');
   if (error) throw error;
-  return (data ?? []) as any;
+  return (data ?? []) as Tables<'profiles'>[];
 }
 
-export async function getProfile(userId: string): Promise<{ id: string; email: string; display_name: string | null } | null> {
+export async function getProfile(userId: string) {
   const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
   if (error) return null;
-  return data as any;
+  return data as Tables<'profiles'> | null;
 }
 
 export async function updateProfile(userId: string, updates: { display_name?: string }): Promise<void> {
@@ -287,11 +288,11 @@ export async function updateProfile(userId: string, updates: { display_name?: st
 
 // ─── Audit Log ─────────────────────────────────────────────
 
-export async function getAuditLog(limit = 50): Promise<Array<{ id: number; user_id: string; action: string; target_type: string; target_id: string; details: any; created_at: string }>> {
+export async function getAuditLog(limit = 50) {
   const { data, error } = await supabase.from('audit_log').select('*')
     .order('created_at', { ascending: false }).limit(limit);
   if (error) throw error;
-  return (data ?? []) as any;
+  return (data ?? []) as Tables<'audit_log'>[];
 }
 
 // ─── Recent Event Count (for notifications) ────────────────

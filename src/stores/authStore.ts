@@ -14,7 +14,7 @@ interface AuthStore {
 
 let authSubscription: { unsubscribe: () => void } | null = null;
 
-const fetchRole = async (userId: string, set: any) => {
+const fetchRole = async (userId: string, set: any, attempt = 1) => {
   try {
     const { data } = await supabase.rpc('get_user_role', { _user_id: userId });
     if (data) {
@@ -22,17 +22,13 @@ const fetchRole = async (userId: string, set: any) => {
         user: s.user ? { ...s.user, role: data as UserRole } : s.user,
       }));
     }
-  } catch {
-    setTimeout(async () => {
-      try {
-        const { data } = await supabase.rpc('get_user_role', { _user_id: userId });
-        if (data) {
-          set((s: any) => ({
-            user: s.user ? { ...s.user, role: data as UserRole } : s.user,
-          }));
-        }
-      } catch {}
-    }, 1000);
+  } catch (err) {
+    if (attempt < 3) {
+      console.warn(`fetchRole attempt ${attempt} failed, retrying...`, err);
+      setTimeout(() => fetchRole(userId, set, attempt + 1), 1000 * attempt);
+    } else {
+      console.error('fetchRole failed after 3 attempts — user retains default viewer role', err);
+    }
   }
 };
 

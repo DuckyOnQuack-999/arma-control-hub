@@ -1,35 +1,6 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey',
-};
-
-function validateAgentUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    if (!['http:', 'https:'].includes(u.protocol)) return false;
-    if (u.hostname === '169.254.169.254') return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function safeDbWrite(op: Promise<{ error: any }>, label: string) {
-  const { error } = await op;
-  if (error) console.error(`DB write error (${label}):`, error.message);
-}
-
-async function parseJsonSafe(resp: Response): Promise<any> {
-  try {
-    return await resp.json();
-  } catch {
-    console.error('Failed to parse agent response as JSON');
-    return { error: 'Agent returned invalid JSON' };
-  }
-}
+import { corsHeaders, corsResponse, corsError } from "../_shared/cors.ts";
+import { safeDbWrite, authenticateUser, parseJsonSafe } from "../_shared/db.ts";
+import { validateAgentUrl } from "../_shared/validation.ts";
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -37,51 +8,23 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    const authResult = await authenticateUser(req.headers.get('Authorization'));
+    if (authResult instanceof Response) return authResult;
+    const { supabase } = authResult;
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: { user }, error: authError } = await userClient.auth.getUser();
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    let body: any;
+    let body: { serverId?: number };
     try {
       body = await req.json();
     } catch {
-      return new Response(JSON.stringify({ error: 'Invalid request body' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return corsError('Invalid request body');
     }
 
     const { serverId } = body;
-    if (!serverId) {
-      return new Response(JSON.stringify({ error: 'serverId required' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    if (!serverId) return corsError('serverId required');
 
     const { data: server, error: serverErr } = await supabase
       .from('servers').select('*').eq('id', serverId).maybeSingle();
-    if (serverErr || !server) {
-      return new Response(JSON.stringify({ error: 'Server not found' }), {
-        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    if (serverErr || !server) return corsError('Server not found', 404);
 
     // Try agent first if configured
     if (server.agent_url && validateAgentUrl(server.agent_url)) {
@@ -121,7 +64,7 @@ Deno.serve(async (req) => {
         const cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
         await safeDbWrite(supabase.from('metrics').delete().eq('server_id', server.id).lt('recorded_at', cutoff), 'metrics prune');
 
-        return new Response(JSON.stringify({
+        return corsResponse({
           success: true,
           status: agentData.status || server.status,
           player_count: agentData.player_count ?? server.player_count,
@@ -131,9 +74,6 @@ Deno.serve(async (req) => {
           uptime: agentData.uptime ?? server.uptime,
           max_players: server.max_players,
           source: 'agent',
-        }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       } catch (fetchErr) {
         console.error('Agent fetch error, computing from DB:', fetchErr);
@@ -199,7 +139,7 @@ Deno.serve(async (req) => {
     const cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
     await safeDbWrite(supabase.from('metrics').delete().eq('server_id', server.id).lt('recorded_at', cutoff), 'metrics prune');
 
-    return new Response(JSON.stringify({
+    return corsResponse({
       success: true,
       status: server.status,
       player_count: onlinePlayers ?? server.player_count ?? 0,
@@ -209,15 +149,10 @@ Deno.serve(async (req) => {
       uptime,
       max_players: server.max_players,
       source: server.agent_url ? 'agent_fallback' : 'database',
-    }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error) {
     console.error('Server status error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return corsError('Internal server error', 500);
   }
 });

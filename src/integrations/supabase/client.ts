@@ -3,6 +3,9 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+// NOTE: The env var is named VITE_SUPABASE_PUBLISHABLE_KEY (Lovable convention),
+// but Supabase's standard convention is VITE_SUPABASE_ANON_KEY.
+// The edge functions reference SUPABASE_ANON_KEY. Ensure your .env provides both.
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 // Import the supabase client like this:

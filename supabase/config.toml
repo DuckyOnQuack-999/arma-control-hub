@@ -1,1 +1,16 @@
 project_id = "jjekjptdliubvnfbmnsr"
+
+[functions.server-control]
+verify_jwt = false
+
+[functions.server-console]
+verify_jwt = false
+
+[functions.server-browser]
+verify_jwt = false
+
+[functions.server-status]
+verify_jwt = false
+
+[functions.server-files]
+verify_jwt = false

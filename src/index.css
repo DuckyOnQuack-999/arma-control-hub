@@ -68,60 +68,8 @@
     --chart-5: 280 65% 60%;
   }
 
-  /* Keep dark class for explicit control if needed */
-  .dark {
-    --background: 0 0% 5%;
-    --foreground: 0 0% 95%;
-
-    --card: 0 0% 8%;
-    --card-foreground: 0 0% 95%;
-
-    --popover: 0 0% 8%;
-    --popover-foreground: 0 0% 95%;
-
-    --primary: 348 83% 47%;
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 0 0% 15%;
-    --secondary-foreground: 0 0% 90%;
-
-    --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 60%;
-
-    --accent: 348 83% 47%;
-    --accent-foreground: 0 0% 100%;
-
-    --destructive: 0 72% 40%;
-    --destructive-foreground: 0 0% 100%;
-
-    --success: 142 70% 45%;
-    --success-foreground: 0 0% 100%;
-
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 10%;
-
-    --info: 199 95% 45%;
-    --info-foreground: 0 0% 100%;
-
-    --border: 0 0% 20%;
-    --input: 0 0% 20%;
-    --ring: 348 83% 47%;
-
-    --sidebar-background: 0 0% 4%;
-    --sidebar-foreground: 0 0% 85%;
-    --sidebar-primary: 348 83% 47%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 348 30% 12%;
-    --sidebar-accent-foreground: 0 0% 95%;
-    --sidebar-border: 0 0% 18%;
-    --sidebar-ring: 348 83% 47%;
-
-    --chart-1: 348 83% 50%;
-    --chart-2: 142 70% 45%;
-    --chart-3: 38 92% 50%;
-    --chart-4: 199 95% 45%;
-    --chart-5: 280 65% 60%;
-  }
+  /* .dark class inherits from :root — values are identical, so no override needed.
+       If light mode is ever added, define overrides here. */
 }
 
 @layer base {

@@ -1,24 +1,5 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey',
-};
-
-async function safeDbWrite(op: Promise<{ error: any }>, label: string) {
-  const { error } = await op;
-  if (error) console.error(`DB write error (${label}):`, error.message);
-}
-
-async function parseJsonSafe(resp: Response): Promise<any> {
-  try {
-    return await resp.json();
-  } catch {
-    console.error('Failed to parse agent response as JSON');
-    return { error: 'Agent returned invalid JSON' };
-  }
-}
+import { corsHeaders, corsResponse, corsError } from "../_shared/cors.ts";
+import { safeDbWrite, authenticateUser, parseJsonSafe } from "../_shared/db.ts";
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -26,51 +7,23 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    const authResult = await authenticateUser(req.headers.get('Authorization'));
+    if (authResult instanceof Response) return authResult;
+    const { supabase } = authResult;
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: { user }, error: authError } = await userClient.auth.getUser();
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    let body: any;
+    let body: { serverId?: number; since?: number; limit?: number };
     try {
       body = await req.json();
     } catch {
-      return new Response(JSON.stringify({ error: 'Invalid request body' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return corsError('Invalid request body');
     }
 
     const { serverId, since, limit } = body;
-    if (!serverId) {
-      return new Response(JSON.stringify({ error: 'serverId required' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    if (!serverId) return corsError('serverId required');
 
     const { data: server, error: serverErr } = await supabase
       .from('servers').select('id, agent_url').eq('id', serverId).maybeSingle();
-    if (serverErr || !server) {
-      return new Response(JSON.stringify({ error: 'Server not found' }), {
-        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    if (serverErr || !server) return corsError('Server not found', 404);
 
     const maxLines = Math.min(limit || 500, 1000);
 
@@ -86,7 +39,6 @@ Deno.serve(async (req) => {
         });
         const agentData = await parseJsonSafe(agentResp);
 
-        // Persist agent console lines to DB
         if (agentData.lines && Array.isArray(agentData.lines) && agentData.lines.length > 0) {
           const rows = agentData.lines.map((l: any) => ({
             server_id: server.id,
@@ -98,14 +50,7 @@ Deno.serve(async (req) => {
           await safeDbWrite(supabase.from('console_lines').insert(rows), 'console_lines insert from agent');
         }
 
-        return new Response(JSON.stringify({
-          lines: agentData.lines || [],
-          source: 'agent',
-          timestamp: Date.now(),
-        }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return corsResponse({ lines: agentData.lines || [], source: 'agent', timestamp: Date.now() });
       } catch (fetchErr) {
         console.error('Agent console fetch error, falling back to DB:', fetchErr);
       }
@@ -127,13 +72,10 @@ Deno.serve(async (req) => {
     const { data: dbLines, error: dbErr } = await query;
     if (dbErr) {
       console.error('DB console query error:', dbErr.message);
-      return new Response(JSON.stringify({ lines: [], source: 'database', timestamp: Date.now() }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return corsResponse({ lines: [], source: 'database', timestamp: Date.now() });
     }
 
-    const lines = (dbLines || []).reverse().map(l => ({
+    const lines = (dbLines || []).reverse().map((l: any) => ({
       id: l.id,
       timestamp: new Date(l.timestamp).getTime() / 1000,
       type: l.line_type,
@@ -141,19 +83,9 @@ Deno.serve(async (req) => {
       source: l.source,
     }));
 
-    return new Response(JSON.stringify({
-      lines,
-      source: 'database',
-      timestamp: Date.now(),
-    }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-
+    return corsResponse({ lines, source: 'database', timestamp: Date.now() });
   } catch (error) {
     console.error('Server console error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return corsError('Internal server error', 500);
   }
 });

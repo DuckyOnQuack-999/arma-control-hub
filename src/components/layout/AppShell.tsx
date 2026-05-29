@@ -54,7 +54,7 @@ export function AppShell() {
         const newStatus = newRow.status;
 
         if (oldStatus && oldStatus !== newStatus && (newStatus === 'crashed' || newStatus === 'offline')) {
-          const title = newStatus === 'crashed' ? '🔴 Server Crashed' : '⚠️ Server Offline';
+          const title = newStatus === 'crashed' ? 'Server Crashed' : 'Server Offline';
           toast({
             title,
             description: `${newRow.name} is now ${newStatus}`,

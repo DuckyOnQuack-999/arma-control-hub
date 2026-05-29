@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom';
+import { useParams, Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getServer, serverAction, pollServerStatus } from '@/lib/supabaseApi';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -24,6 +24,11 @@ const ServerDetailPage = () => {
   const serverId = Number(id);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
+
+  // Guard against invalid/non-numeric server IDs
+  if (!id || isNaN(serverId) || serverId <= 0) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   const { data: server, isLoading, refetch } = useQuery({
     queryKey: ['server', serverId],
