@@ -313,7 +313,8 @@ export async function getBrowserServers(): Promise<BrowserServer[]> {
     const { data, error } = await supabase.functions.invoke('server-browser');
     if (error) throw error;
     return data?.servers ?? [];
-  } catch {
+  } catch (err) {
+    console.warn('Server browser fetch failed:', err);
     return [];
   }
 }
