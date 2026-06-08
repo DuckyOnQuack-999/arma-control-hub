@@ -16,12 +16,29 @@ interface BrowserServer {
 
 let cachedServers: BrowserServer[] | null = null;
 let cacheTime = 0;
-const CACHE_TTL = 30000;
-
-function stripHtmlTags(html: string): string { return html.replace(/<[^>]*>/g, ''); }
+const CACHE_TTL = 60000; // 1 minute cache
 
 function decodeHtmlEntities(text: string): string {
-  return text.replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)));
+  return text
+    .replace(/&gt;/g, '>')
+    .replace(/&lt;/g, '<')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)))
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\\_/g, '_');
+}
+
+function getGameTypeFromVersion(version: string): string {
+  if (!version) return 'Armagetron';
+  const v = version.toLowerCase();
+  if (v.includes('sty+ct+ap')) return 'sty+ct+ap';
+  if (v.includes('sty+ct')) return 'sty+ct';
+  if (v.includes('sty')) return 'sty';
+  if (v.includes('ct+ap')) return 'ct+ap';
+  if (v.includes('0.4')) return '0.4';
+  if (v.includes('0.2.9')) return '0.2.9';
+  return version.substring(0, 15);
 }
 
 function getBrowserUrls(): string[] {
@@ -40,51 +57,155 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Respons
     const response = await fetch(url, { signal: controller.signal });
     clearTimeout(timeout);
     return response;
-  } catch (e) { clearTimeout(timeout); throw e; }
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
+  }
 }
 
-function parseServersHTML(html: string): BrowserServer[] {
+// Parse the actual format from browser.armanelgtron.tk
+// Format: [server_name](?info=...) - (X/Y) players
+// Followed by: Players: name1, name2, ...
+// Sometimes: armagetronad://host:port, Version: ..., URL: ...
+function parseServersFromText(text: string): BrowserServer[] {
   const servers: BrowserServer[] = [];
-  const serverBlocks = html.split(/<a name="/);
   let id = 1;
-  for (let i = 1; i < serverBlocks.length; i++) {
-    const block = serverBlocks[i];
+
+  // The text uses square brackets for server names with links
+  // Pattern: [server_name](?info=...) - (players/max)
+  // Also handle: [server_name](?info=...)_(stuff) - (players/max) format
+  const serverPattern = /\[([^\]]+)\]\([^)]+\)\s*[-–]\s*\((\d+)\/(\d+)\)/g;
+
+  let match;
+  const usedHosts = new Set<string>();
+
+  while ((match = serverPattern.exec(text)) !== null) {
     try {
-      const anchorMatch = block.match(/^[^"]*"[^>]*>(.*?)<\/a>/s);
-      if (!anchorMatch) continue;
-      const rawName = stripHtmlTags(anchorMatch[1]).trim();
-      const name = decodeHtmlEntities(rawName);
-      if (!name) continue;
-      const afterAnchor = block.substring(anchorMatch[0].length);
-      const plainAfter = stripHtmlTags(afterAnchor);
-      const countMatch = plainAfter.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/);
-      const playerCount = countMatch ? parseInt(countMatch[1]) : 0;
-      const maxPlayers = countMatch ? parseInt(countMatch[2]) : 16;
+      const name = decodeHtmlEntities(match[1].trim());
+      const players = parseInt(match[2]);
+      const maxPlayers = parseInt(match[3]);
+
+      // Find the content between this match and the next server entry
+      const startPos = match.index + match[0].length;
+      const nextMatchPos = text.indexOf('[', startPos);
+      const endPos = nextMatchPos > startPos ? nextMatchPos : Math.min(text.length, startPos + 1000);
+
+      const blockContent = text.substring(startPos, endPos);
+
+      // Extract player names
       let playerNames: string[] = [];
-      const playersMatch = afterAnchor.match(/Players:\s*(.*?)(?:<br|<a\s|$)/i);
+      const playersMatch = blockContent.match(/Players:\s*([^\n\r]+?)(?=\n|\r|Armagetron|Version|URL|$)/i);
       if (playersMatch) {
-        const playersText = stripHtmlTags(playersMatch[1]).trim();
-        if (playersText) playerNames = playersText.split(',').map(p => decodeHtmlEntities(p.trim())).filter(Boolean);
+        const playersText = playersMatch[1].trim();
+        if (playersText && playersText.toLowerCase() !== 'empty') {
+          playerNames = playersText
+            .split(',')
+            .map(p => decodeHtmlEntities(p.trim()))
+            .filter(p => p && p.length > 0 && p.length < 50);
+        }
       }
-      let host = '', port = 4534;
-      const uriMatch = block.match(/armagetronad:\/\/([^:"\s]+):(\d+)/);
-      if (uriMatch) { host = uriMatch[1]; port = parseInt(uriMatch[2]); }
+
+      // Extract host and port from armagetronad:// URI in the block
+      let host = '';
+      let port = 4534;
+      const uriMatch = blockContent.match(/armagetronad:\/\/([^:\s\)\]]+):(\d+)/i);
+      if (uriMatch) {
+        host = uriMatch[1].trim();
+        port = parseInt(uriMatch[2]);
+      }
+
+      // Extract version
       let version = '';
-      const versionMatch = afterAnchor.match(/Version:\s*([^\s<]+)/i);
-      if (versionMatch) version = versionMatch[1].trim();
-      let serverUrl = '';
-      const urlMatch = afterAnchor.match(/URL:\s*(https?:\/\/[^\s<]+)/i);
-      if (urlMatch) serverUrl = urlMatch[1].trim();
-      let gameType = 'Armagetron';
-      if (version) {
-        if (version.includes('sty+ct')) gameType = 'sty+ct';
-        else if (version.includes('sty')) gameType = 'sty';
-        else if (version.includes('ct+ap')) gameType = 'ct+ap';
-        else gameType = version;
+      const versionMatch = blockContent.match(/Version:\s*([^\n\r]+?)(?=\n|\r|URL|Players|Armagetron|$)/i);
+      if (versionMatch) {
+        version = versionMatch[1].trim();
       }
-      servers.push({ id: id++, name, host, port, players: playerCount, maxPlayers, gameType, version, playerNames, url: serverUrl });
-    } catch (e) { console.error('Error parsing server block:', e); }
+
+      // Extract URL
+      let serverUrl = '';
+      const urlMatch = blockContent.match(/URL:\s*(https?:\/\/[^\s\r\n]+)/i);
+      if (urlMatch) {
+        serverUrl = urlMatch[1].trim();
+      }
+
+      // Skip if we already have a server for this host:port with more players
+      const hostKey = host ? `${host}:${port}` : name;
+      if (host && usedHosts.has(hostKey)) continue;
+      if (host) usedHosts.add(hostKey);
+
+      const gameType = getGameTypeFromVersion(version);
+
+      servers.push({
+        id: id++,
+        name,
+        host,
+        port,
+        players,
+        maxPlayers,
+        gameType,
+        version,
+        playerNames,
+        url: serverUrl,
+      });
+    } catch (e) {
+      console.error('Error parsing server block:', e);
+    }
   }
+
+  // Also parse servers that appear in armagetronad:// format without the bracket syntax
+  // These appear as: "Armagetron Advanced: [Click here to enter the server](armagetronad://host:port)"
+  const linkOnlyPattern = /armagetronad:\/\/([^:\s\)\]]+):(\d+)/g;
+  let linkMatch;
+
+  while ((linkMatch = linkOnlyPattern.exec(text)) !== null) {
+    const linkHost = linkMatch[1].trim();
+    const linkPort = parseInt(linkMatch[2]);
+    const hostKey = `${linkHost}:${linkPort}`;
+
+    if (usedHosts.has(hostKey)) continue;
+
+    // Find surrounding context for this link to get server name and version
+    const contextStart = Math.max(0, linkMatch.index - 300);
+    const contextEnd = Math.min(text.length, linkMatch.index + linkMatch[0].length + 300);
+    const context = text.substring(contextStart, contextEnd);
+
+    // Try to find server name in context (look for bracket pattern nearby)
+    let name = `Server @ ${linkHost}:${linkPort}`;
+    const nameMatch = context.match(/\[([^\]]+)\]\([^)]+\)/);
+    if (nameMatch && !nameMatch[1].toLowerCase().includes('click here')) {
+      name = decodeHtmlEntities(nameMatch[1].trim());
+    }
+
+    // Extract version from context
+    let version = '';
+    const versionMatch = context.match(/Version:\s*([^\n\r]+?)(?=\n|\r|URL|Players|Armagetron|$)/i);
+    if (versionMatch) {
+      version = versionMatch[1].trim();
+    }
+
+    // Extract URL from context
+    let serverUrl = '';
+    const urlMatch = context.match(/URL:\s*(https?:\/\/[^\s\r\n]+)/i);
+    if (urlMatch) {
+      serverUrl = urlMatch[1].trim();
+    }
+
+    usedHosts.add(hostKey);
+
+    servers.push({
+      id: id++,
+      name,
+      host: linkHost,
+      port: linkPort,
+      players: 0,
+      maxPlayers: 16,
+      gameType: getGameTypeFromVersion(version),
+      version,
+      playerNames: [],
+      url: serverUrl,
+    });
+  }
+
   return servers;
 }
 
@@ -94,21 +215,29 @@ async function fetchServerListHTML(): Promise<BrowserServer[]> {
     try {
       console.log(`Fetching server list from ${url}`);
       const response = await fetchWithTimeout(url, 10000);
-      if (!response.ok) { console.error(`Browser at ${url} returned ${response.status}`); continue; }
-      const html = await response.text();
-      const servers = parseServersHTML(html);
-      if (servers.length > 0) { console.log(`HTML parser returned ${servers.length} servers from ${url}`); return servers; }
-    } catch (e) { console.error(`Failed to fetch from ${url}:`, e); }
+      if (!response.ok) {
+        console.error(`Browser at ${url} returned ${response.status}`);
+        continue;
+      }
+      const text = await response.text();
+      const servers = parseServersFromText(text);
+      if (servers.length > 0) {
+        console.log(`Parser returned ${servers.length} servers from ${url}`);
+        // Sort by player count (active servers first)
+        return servers.sort((a, b) => b.players - a.players);
+      }
+    } catch (e) {
+      console.error(`Failed to fetch from ${url}:`, e);
+    }
   }
   return [];
 }
 
-// Try fetching from the Armagetron stats API (JSON) as a primary source
+// Try fetching from alternative JSON APIs
 async function fetchServerListAPI(): Promise<BrowserServer[]> {
-  // The community maintains a JSON API at stats.armagetronad.org
   const apiUrls = [
-    'https://stats.armagetronad.org/api/servers',
-    'https://api.armagetronad.org/servers',
+    'https://retrocyclesleague.com/api/servers',
+    'https://lightron.org/api/servers',
   ];
 
   for (const url of apiUrls) {
@@ -119,27 +248,18 @@ async function fetchServerListAPI(): Promise<BrowserServer[]> {
       const data = await response.json();
 
       if (Array.isArray(data) && data.length > 0) {
-        return data.map((s: any, idx: number) => {
-          let gameType = 'Armagetron';
-          const v = s.version || '';
-          if (v.includes('sty+ct')) gameType = 'sty+ct';
-          else if (v.includes('sty')) gameType = 'sty';
-          else if (v.includes('ct+ap')) gameType = 'ct+ap';
-          else if (v) gameType = v;
-
-          return {
-            id: idx + 1,
-            name: s.name || s.serverName || `Server @ ${s.host || s.ip}:${s.port || 4534}`,
-            host: s.host || s.ip || s.address || '',
-            port: s.port || 4534,
-            players: s.players || s.numPlayers || s.playerCount || 0,
-            maxPlayers: s.maxPlayers || s.max_players || s.numHumans || 16,
-            gameType,
-            version: v,
-            playerNames: s.playerNames || s.players_list || [],
-            url: s.url || s.website || '',
-          } as BrowserServer;
-        });
+        return data.map((s: any, idx: number) => ({
+          id: idx + 1,
+          name: s.name || s.serverName || `Server @ ${s.host || s.ip}:${s.port || 4534}`,
+          host: s.host || s.ip || s.address || '',
+          port: s.port || 4534,
+          players: s.players || s.numPlayers || s.playerCount || 0,
+          maxPlayers: s.maxPlayers || s.max_players || 16,
+          gameType: getGameTypeFromVersion(s.version || ''),
+          version: s.version || '',
+          playerNames: s.playerNames || s.players_list || [],
+          url: s.url || s.website || '',
+        } as BrowserServer));
       }
     } catch (e) {
       console.log(`JSON API at ${url} not available:`, (e as Error).message);
@@ -149,12 +269,12 @@ async function fetchServerListAPI(): Promise<BrowserServer[]> {
 }
 
 async function fetchServerList(): Promise<BrowserServer[]> {
-  // Strategy: JSON API first (most reliable on Deno Deploy), then HTML fallback
-  const apiServers = await fetchServerListAPI();
-  if (apiServers.length > 0) return apiServers;
+  // Strategy: HTML first (known working source), then API fallback
+  const htmlServers = await fetchServerListHTML();
+  if (htmlServers.length > 0) return htmlServers;
 
-  console.log('JSON API unavailable, using HTML fallback');
-  return await fetchServerListHTML();
+  console.log('HTML parser returned no servers, trying JSON API');
+  return await fetchServerListAPI();
 }
 
 Deno.serve(async (req) => {
@@ -168,15 +288,40 @@ Deno.serve(async (req) => {
 
     const now = Date.now();
     if (cachedServers && (now - cacheTime) < CACHE_TTL) {
-      return corsResponse({ servers: cachedServers, cached: true, count: cachedServers.length, source: 'cache' });
+      return corsResponse({
+        servers: cachedServers,
+        cached: true,
+        count: cachedServers.length,
+        source: 'cache',
+        lastUpdate: new Date(cacheTime).toISOString()
+      });
     }
 
     const servers = await fetchServerList();
-    if (servers.length > 0) { cachedServers = servers; cacheTime = now; }
+    if (servers.length > 0) {
+      cachedServers = servers;
+      cacheTime = now;
+    }
 
-    return corsResponse({ servers, cached: false, count: servers.length, source: 'live' });
+    return corsResponse({
+      servers,
+      cached: false,
+      count: servers.length,
+      source: 'live',
+      fetchedAt: new Date().toISOString()
+    });
   } catch (error) {
     console.error('Server browser error:', error);
-    return corsResponse({ servers: cachedServers || [], error: 'Failed to fetch server list' });
+    // Return cached data on error if available
+    if (cachedServers) {
+      return corsResponse({
+        servers: cachedServers,
+        cached: true,
+        count: cachedServers.length,
+        source: 'cache_fallback',
+        error: 'Live fetch failed, using cached data'
+      });
+    }
+    return corsResponse({ servers: [], error: 'Failed to fetch server list' });
   }
 });

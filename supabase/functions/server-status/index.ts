@@ -2,6 +2,12 @@ import { corsHeaders, corsResponse, corsError } from "../_shared/cors.ts";
 import { safeDbWrite, authenticateUser, parseJsonSafe } from "../_shared/db.ts";
 import { validateAgentUrl } from "../_shared/validation.ts";
 
+// Simple in-memory cache for status responses (5 second TTL)
+const statusCache = new Map<number, { data: any; timestamp: number }>();
+const CACHE_TTL_MS = 5000;
+const METRICS_PRUNE_INTERVAL_MS = 5 * 60 * 1000; // Prune every 5 minutes
+let lastPruneTime = 0;
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -21,6 +27,12 @@ Deno.serve(async (req) => {
 
     const { serverId } = body;
     if (!serverId) return corsError('serverId required');
+
+    // Check cache first
+    const cached = statusCache.get(serverId);
+    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL_MS) {
+      return corsResponse({ ...cached.data, cached: true });
+    }
 
     const { data: server, error: serverErr } = await supabase
       .from('servers').select('*').eq('id', serverId).maybeSingle();
@@ -60,11 +72,14 @@ Deno.serve(async (req) => {
           }), 'metrics insert from agent');
         }
 
-        // Prune old metrics (> 7 days)
-        const cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
-        await safeDbWrite(supabase.from('metrics').delete().eq('server_id', server.id).lt('recorded_at', cutoff), 'metrics prune');
+        // Prune old metrics (> 7 days) - only periodically to reduce DB load
+        if (Date.now() - lastPruneTime > METRICS_PRUNE_INTERVAL_MS) {
+          const cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+          await safeDbWrite(supabase.from('metrics').delete().lt('recorded_at', cutoff), 'metrics prune global');
+          lastPruneTime = Date.now();
+        }
 
-        return corsResponse({
+        const result = {
           success: true,
           status: agentData.status || server.status,
           player_count: agentData.player_count ?? server.player_count,
@@ -74,7 +89,9 @@ Deno.serve(async (req) => {
           uptime: agentData.uptime ?? server.uptime,
           max_players: server.max_players,
           source: 'agent',
-        });
+        };
+        statusCache.set(serverId, { data: result, timestamp: Date.now() });
+        return corsResponse(result);
       } catch (fetchErr) {
         console.error('Agent fetch error, computing from DB:', fetchErr);
       }
@@ -135,11 +152,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Prune old metrics (> 7 days)
-    const cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
-    await safeDbWrite(supabase.from('metrics').delete().eq('server_id', server.id).lt('recorded_at', cutoff), 'metrics prune');
+    // Prune old metrics (> 7 days) - only periodically to reduce DB load
+    if (Date.now() - lastPruneTime > METRICS_PRUNE_INTERVAL_MS) {
+      const cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+      await safeDbWrite(supabase.from('metrics').delete().lt('recorded_at', cutoff), 'metrics prune global');
+      lastPruneTime = Date.now();
+    }
 
-    return corsResponse({
+    const result = {
       success: true,
       status: server.status,
       player_count: onlinePlayers ?? server.player_count ?? 0,
@@ -149,7 +169,9 @@ Deno.serve(async (req) => {
       uptime,
       max_players: server.max_players,
       source: server.agent_url ? 'agent_fallback' : 'database',
-    });
+    };
+    statusCache.set(serverId, { data: result, timestamp: Date.now() });
+    return corsResponse(result);
 
   } catch (error) {
     console.error('Server status error:', error);
