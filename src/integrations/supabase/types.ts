@@ -321,6 +321,7 @@ export type Database = {
       }
       servers: {
         Row: {
+          agent_token: string | null
           agent_url: string | null
           auto_restart: boolean
           config_dir: string
@@ -340,6 +341,7 @@ export type Database = {
           uptime: number
         }
         Insert: {
+          agent_token?: string | null
           agent_url?: string | null
           auto_restart?: boolean
           config_dir?: string
@@ -359,6 +361,7 @@ export type Database = {
           uptime?: number
         }
         Update: {
+          agent_token?: string | null
           agent_url?: string | null
           auto_restart?: boolean
           config_dir?: string

@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { createServer, serverAction, saveConfig } from '@/lib/supabaseApi';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { Loader as Loader2, ChevronDown, ChevronUp, FileText, Play } from 'lucide-react';
@@ -76,6 +77,12 @@ interface Props {
 
 export function CreateServerModal({ open, onClose, onCreated }: Props) {
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [launching, setLaunching] = useState(false);
+  const [template, setTemplate] = useState('default');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [customConfig, setCustomConfig] = useState(CONFIG_TEMPLATES.default.config);
+
   const [form, setForm] = useState({
     name: '',
     executable_path: '/usr/bin/armagetronad-dedicated',
@@ -86,37 +93,24 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
     auto_restart: true,
     agent_url: '',
   });
-  const [template, setTemplate] = useState<keyof typeof CONFIG_TEMPLATES>('default');
-  const [customConfig, setCustomConfig] = useState(CONFIG_TEMPLATES.default.config);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [launching, setLaunching] = useState(false);
 
   const handleTemplateChange = (value: string) => {
-    const key = value as keyof typeof CONFIG_TEMPLATES;
-    setTemplate(key);
-    // Update server name and max players from template
-    const configNameMatch = CONFIG_TEMPLATES[key].config.match(/SERVER_NAME\s+(.+)/);
-    if (configNameMatch && !form.name) {
-      setForm(f => ({ ...f, name: configNameMatch[1].trim() }));
-    }
-    setCustomConfig(CONFIG_TEMPLATES[key].config);
+    setTemplate(value);
+    setCustomConfig(CONFIG_TEMPLATES[value as keyof typeof CONFIG_TEMPLATES].config);
   };
 
   const parseConfigToKeyValue = (configText: string): Record<string, string> => {
     const result: Record<string, string> = {};
-    const lines = configText.split('\n');
-    for (const line of lines) {
+    configText.split('\n').forEach(line => {
       const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('//')) {
-        const parts = trimmed.split(/\s+/);
-        if (parts.length >= 2) {
-          const key = parts[0];
-          const value = parts.slice(1).join(' ');
-          result[key] = value;
-        }
+      if (!trimmed || trimmed.startsWith('#')) return;
+      const spaceIdx = trimmed.indexOf(' ');
+      if (spaceIdx > 0) {
+        const key = trimmed.substring(0, spaceIdx);
+        const value = trimmed.substring(spaceIdx + 1);
+        result[key] = value;
       }
-    }
+    });
     return result;
   };
 
@@ -125,197 +119,227 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
       toast({ title: 'Validation Error', description: 'Name must be at least 3 characters', variant: 'destructive' });
       return;
     }
-    setLoading(true);
-    try {
-      const server = await createServer(form);
-
-      // Create default config files in database
-      const configData = parseConfigToKeyValue(customConfig);
-      configData['PORT'] = String(form.port);
-      configData['MAX_PLAYERS'] = String(form.max_players);
-      if (!configData['SERVER_NAME']) {
-        configData['SERVER_NAME'] = form.name;
-      }
-
-      try {
-        await saveConfig(server.id, configData);
-      } catch (cfgErr) {
-        console.warn('Failed to save initial config:', cfgErr);
-      }
-
-      toast({ title: 'Server created', description: `${form.name} has been added with ${template} configuration` });
-
-      // Auto-start if agent is configured
-      if (form.agent_url) {
-        setLaunching(true);
-        try {
-          const result = await serverAction(server.id, 'start');
-          toast({ title: 'Server started', description: result.message });
-        } catch (err: any) {
-          toast({
-            title: 'Start failed',
-            description: `Server created but start failed: ${err?.message}. You can retry from the Overview tab.`,
-            variant: 'destructive',
-          });
-        } finally {
-          setLaunching(false);
-        }
-      } else {
-        toast({
-          title: 'Server created',
-          description: 'Configure a host agent for remote process control, or manage directly from the panel.',
-          action: <Button size="sm" variant="outline" className="text-xs" onClick={() => navigate('/host-settings')}>Host Settings</Button>,
-        });
-      }
-
-      onCreated();
-      onClose();
-      // Reset form
-      setForm({ name: '', executable_path: '/usr/bin/armagetronad-dedicated', data_dir: '/usr/share/armagetronad', config_dir: '/etc/armagetronad/new', port: 4534, max_players: 16, auto_restart: true, agent_url: '' });
-      setTemplate('default');
-      setCustomConfig(CONFIG_TEMPLATES.default.config);
-    } catch (err: any) {
-      toast({ title: 'Failed to create server', description: err?.message, variant: 'destructive' });
-    } finally {
-      setLoading(false);
+    if (!form.port || form.port < 1024 || form.port > 65535) {
+      toast({ title: 'Validation Error', description: 'Port must be between 1024 and 65535', variant: 'destructive' });
+      return;
     }
+
+    // Check auth
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      toast({ title: 'Authentication Required', description: 'Please log in to create a server', variant: 'destructive' });
+      return;
+    }
+
+    setLoading(true);
+    let server: any = null;
+    try {
+      server = await createServer(form);
+    } catch (err: any) {
+      console.error('Create server error:', err);
+      toast({ title: 'Failed to create server', description: err?.message || 'Unknown error', variant: 'destructive' });
+      setLoading(false);
+      return;
+    }
+
+    if (!server || !server.id) {
+      toast({ title: 'Failed to create server', description: 'Server was not created', variant: 'destructive' });
+      setLoading(false);
+      return;
+    }
+
+    // Create default config files in database
+    const configData = parseConfigToKeyValue(customConfig);
+    configData['PORT'] = String(form.port);
+    configData['MAX_PLAYERS'] = String(form.max_players);
+    if (!configData['SERVER_NAME']) {
+      configData['SERVER_NAME'] = form.name;
+    }
+
+    try {
+      await saveConfig(server.id, configData);
+    } catch (cfgErr: any) {
+      console.warn('Failed to save initial config:', cfgErr);
+      toast({ title: 'Warning', description: `Server created but config save failed: ${cfgErr?.message}`, variant: 'destructive' });
+    }
+
+    // Auto-start if agent is configured
+    if (form.agent_url) {
+      setLaunching(true);
+      try {
+        const result = await serverAction(server.id, 'start');
+        toast({ title: 'Server started', description: result.message });
+      } catch (err: any) {
+        toast({
+          title: 'Start failed',
+          description: `Server created but start failed: ${err?.message}. You can retry from the Overview tab.`,
+          variant: 'destructive',
+        });
+      } finally {
+        setLaunching(false);
+      }
+    } else {
+      toast({
+        title: 'Server created',
+        description: 'Configure a host agent for remote process control, or manage directly from the panel.',
+        action: <Button size="sm" variant="outline" className="text-xs" onClick={() => navigate('/host-settings')}>Host Settings</Button>,
+      });
+    }
+
+    onCreated();
+    onClose();
+    // Reset form
+    setForm({ name: '', executable_path: '/usr/bin/armagetronad-dedicated', data_dir: '/usr/share/armagetronad', config_dir: '/etc/armagetronad/new', port: 4534, max_players: 16, auto_restart: true, agent_url: '' });
+    setTemplate('default');
+    setCustomConfig(CONFIG_TEMPLATES.default.config);
+    setLoading(false);
   };
 
-  const isWorking = loading || launching;
-
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && !isWorking && onClose()}>
-      <DialogContent className="border-border bg-card sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-display">Add Server</DialogTitle>
+          <DialogTitle>Create New Server</DialogTitle>
         </DialogHeader>
-        <div className="grid gap-4 py-2">
-          {/* Basic Settings */}
-          <div className="grid gap-1.5">
-            <Label>Server Name</Label>
-            <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="My Server" />
-          </div>
 
-          {/* Config Template Selection */}
-          <div className="grid gap-1.5">
+        <div className="space-y-4 py-2">
+          {/* Template Selection */}
+          <div className="space-y-2">
             <Label>Configuration Template</Label>
             <Select value={template} onValueChange={handleTemplateChange}>
               <SelectTrigger>
-                <SelectValue placeholder="Select a template" />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {Object.entries(CONFIG_TEMPLATES).map(([key, tpl]) => (
+                {Object.entries(CONFIG_TEMPLATES).map(([key, t]) => (
                   <SelectItem key={key} value={key}>
-                    {tpl.name} - {tpl.description}
+                    {t.name} — {t.description}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          {/* Custom Config Editor */}
-          <div className="grid gap-1.5">
-            <div className="flex items-center justify-between">
-              <Label className="flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Configuration File (settings_custom.cfg)
-              </Label>
-              <span className="text-xs text-muted-foreground">Edit above or modify directly</span>
-            </div>
-            <Textarea
-              value={customConfig}
-              onChange={e => setCustomConfig(e.target.value)}
-              className="font-mono text-xs min-h-[150px] bg-muted"
-              placeholder="KEY VALUE"
+          {/* Basic Info */}
+          <div className="space-y-2">
+            <Label>Server Name</Label>
+            <Input
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="My Racing Server"
             />
           </div>
 
-          {/* Quick Settings */}
           <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1.5">
+            <div className="space-y-2">
               <Label>Port</Label>
-              <Input type="number" value={form.port} onChange={e => setForm(f => ({ ...f, port: +e.target.value }))} min={1024} max={65535} />
+              <Input
+                type="number"
+                value={form.port}
+                onChange={(e) => setForm({ ...form, port: parseInt(e.target.value) || 4534 })}
+              />
             </div>
-            <div className="grid gap-1.5">
+            <div className="space-y-2">
               <Label>Max Players</Label>
-              <Input type="number" value={form.max_players} onChange={e => setForm(f => ({ ...f, max_players: +e.target.value }))} min={2} max={32} />
+              <Input
+                type="number"
+                value={form.max_players}
+                onChange={(e) => setForm({ ...form, max_players: parseInt(e.target.value) || 16 })}
+              />
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <Switch checked={form.auto_restart} onCheckedChange={v => setForm(f => ({ ...f, auto_restart: v }))} />
+            <Switch
+              checked={form.auto_restart}
+              onCheckedChange={(v) => setForm({ ...form, auto_restart: v })}
+            />
             <Label>Auto-restart on crash</Label>
           </div>
 
-          {/* Advanced Settings Toggle */}
+          {/* Agent URL */}
+          <div className="space-y-2">
+            <Label>Agent URL (optional)</Label>
+            <Input
+              value={form.agent_url}
+              onChange={(e) => setForm({ ...form, agent_url: e.target.value })}
+              placeholder="http://192.168.1.10:8080"
+            />
+            <p className="text-xs text-muted-foreground">
+              Leave empty to use panel-managed mode (simulated). Set this to enable real process control via a host agent.
+            </p>
+          </div>
+
+          {/* Advanced */}
           <Button
             variant="ghost"
             size="sm"
-            className="flex items-center justify-between w-full"
+            className="w-full justify-between"
             onClick={() => setShowAdvanced(!showAdvanced)}
           >
-            <span>Advanced Settings</span>
+            <span className="flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              Advanced Settings
+            </span>
             {showAdvanced ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
 
           {showAdvanced && (
-            <div className="space-y-3 border-t border-border pt-3">
-              <div className="grid gap-1.5">
+            <div className="space-y-3 border rounded-lg p-3 bg-muted/30">
+              <div className="space-y-2">
                 <Label>Executable Path</Label>
-                <Input value={form.executable_path} onChange={e => setForm(f => ({ ...f, executable_path: e.target.value }))} className="font-mono text-xs" />
+                <Input
+                  value={form.executable_path}
+                  onChange={(e) => setForm({ ...form, executable_path: e.target.value })}
+                />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="grid gap-1.5">
-                  <Label>Data Directory</Label>
-                  <Input value={form.data_dir} onChange={e => setForm(f => ({ ...f, data_dir: e.target.value }))} className="font-mono text-xs" />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label>Config Directory</Label>
-                  <Input value={form.config_dir} onChange={e => setForm(f => ({ ...f, config_dir: e.target.value }))} className="font-mono text-xs" />
-                </div>
+              <div className="space-y-2">
+                <Label>Data Directory</Label>
+                <Input
+                  value={form.data_dir}
+                  onChange={(e) => setForm({ ...form, data_dir: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Config Directory</Label>
+                <Input
+                  value={form.config_dir}
+                  onChange={(e) => setForm({ ...form, config_dir: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Custom Config (KEY VALUE format)</Label>
+                <Textarea
+                  value={customConfig}
+                  onChange={(e) => setCustomConfig(e.target.value)}
+                  rows={10}
+                  className="font-mono text-xs"
+                />
               </div>
             </div>
           )}
-
-          {/* Agent URL */}
-          <div className="grid gap-1.5">
-            <Label>Host Agent URL <span className="text-xs text-muted-foreground">(optional)</span></Label>
-            <div className="flex gap-2">
-              <Input
-                value={form.agent_url}
-                onChange={e => setForm(f => ({ ...f, agent_url: e.target.value }))}
-                placeholder="http://192.168.1.10:8080"
-                className="font-mono text-xs flex-1"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="text-xs shrink-0"
-                onClick={() => setForm(f => ({ ...f, agent_url: 'http://127.0.0.1:8080' }))}
-              >
-                Localhost
-              </Button>
-            </div>
-            <p className="text-[10px] text-muted-foreground">
-              {form.agent_url
-                ? 'Server will be auto-started on the agent after creation.'
-                : 'Leave empty for panel-managed mode (database-stored configs, no process control).'}
-            </p>
-          </div>
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose} disabled={isWorking}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={isWorking}>
+          <Button variant="outline" onClick={onClose} disabled={loading}>
+            Cancel
+          </Button>
+          <Button onClick={handleSubmit} disabled={loading || launching}>
             {launching ? (
-              <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Starting…</>
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Starting...
+              </>
             ) : loading ? (
-              <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Creating…</>
-            ) : form.agent_url ? (
-              <><Play className="h-4 w-4 mr-1" /> Create & Start</>
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creating...
+              </>
             ) : (
-              'Create Server'
+              <>
+                <Play className="mr-2 h-4 w-4" />
+                Create Server
+              </>
             )}
           </Button>
         </DialogFooter>
