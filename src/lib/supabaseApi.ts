@@ -17,16 +17,17 @@ export async function getServer(id: number): Promise<Server | null> {
   return data;
 }
 
-export async function createServer(data: Partial<Server> & { agent_url?: string }): Promise<Server> {
+export async function createServer(data: Partial<Server> & { agent_url?: string; agent_token?: string }): Promise<Server> {
   const { data: server, error } = await supabase.from('servers').insert({
     name: data.name || 'New Server',
     executable_path: data.executable_path || '/usr/bin/armagetronad-dedicated',
     data_dir: data.data_dir || '/usr/share/armagetronad',
-    config_dir: data.config_dir || '/etc/armagetronad/new',
+    config_dir: data.config_dir || '/etc/armagetronad',
     port: data.port || 4534,
     auto_restart: data.auto_restart ?? true,
     max_players: data.max_players || 16,
     agent_url: data.agent_url || '',
+    agent_token: data.agent_token || '',
   }).select().single();
   if (error) throw error;
   return server;
@@ -62,25 +63,17 @@ export async function getPlayers(serverId: number): Promise<Player[]> {
   return data ?? [];
 }
 
-export async function kickPlayer(serverId: number, playerName: string): Promise<void> {
+export async function kickPlayer(serverId: number, playerName: string, reason?: string): Promise<{ success: boolean; error?: string }> {
   const { error } = await supabase.from('players')
     .update({ is_online: false })
     .eq('server_id', serverId).eq('name', playerName);
   if (error) throw error;
   const safeName = playerName.replace(/[\r\n\0]/g, '').slice(0, 200);
-  await serverAction(serverId, 'command', `KICK ${safeName}`);
+  await serverAction(serverId, 'command', `KICK ${safeName}${reason ? ` ${reason}` : ''}`);
+  return { success: true };
 }
 
-// ─── Bans ─────────────────────────────────────────────
-
-export async function getBans(serverId: number): Promise<Ban[]> {
-  const { data, error } = await supabase.from('bans').select('*')
-    .eq('server_id', serverId).order('created_at', { ascending: false });
-  if (error) throw error;
-  return data ?? [];
-}
-
-export async function banPlayer(serverId: number, playerName: string, reason: string, durationMinutes?: number): Promise<void> {
+export async function banPlayer(serverId: number, playerName: string, reason: string, durationMinutes?: number): Promise<{ success: boolean; error?: string }> {
   const expiresAt = durationMinutes && durationMinutes > 0
     ? new Date(Date.now() + durationMinutes * 60 * 1000).toISOString()
     : null;
@@ -95,12 +88,24 @@ export async function banPlayer(serverId: number, playerName: string, reason: st
 
   await supabase.from('players').update({ is_online: false }).eq('server_id', serverId).eq('name', playerName);
   const safeName = playerName.replace(/[\r\n\0]/g, '').slice(0, 200);
-  await serverAction(serverId, 'command', `BAN ${safeName}`);
+  await serverAction(serverId, 'command', `BAN ${safeName}${reason ? ` ${reason}` : ''}`);
+  return { success: true };
 }
 
-export async function unban(banId: number): Promise<void> {
-  const { error } = await supabase.from('bans').delete().eq('id', banId);
+export async function unban(serverId: number, playerName: string): Promise<{ success: boolean; error?: string }> {
+  const { error } = await supabase.from('bans').delete()
+    .eq('server_id', serverId).eq('player_name', playerName);
   if (error) throw error;
+  return { success: true };
+}
+
+// ─── Bans ─────────────────────────────────────────────
+
+export async function getBans(serverId: number): Promise<Ban[]> {
+  const { data, error } = await supabase.from('bans').select('*')
+    .eq('server_id', serverId).order('created_at', { ascending: false });
+  if (error) throw error;
+  return data ?? [];
 }
 
 // ─── Events / Logs ─────────────────────────────────────
@@ -141,9 +146,10 @@ export async function getConsoleLinesFromDB(serverId: number, since?: number, li
   if (error) throw error;
   return (data || []).reverse().map(l => ({
     id: l.id,
-    timestamp: new Date(l.timestamp).getTime() / 1000,
+    server_id: l.server_id,
     type: l.line_type as ConsoleLine['type'],
     text: l.text,
+    timestamp: new Date(l.timestamp).getTime(),
   }));
 }
 
@@ -157,7 +163,7 @@ export async function getMetrics(serverId: number, hours = 24): Promise<MetricPo
     .order('recorded_at', { ascending: true });
   if (error) throw error;
   return (data ?? []).map(m => ({
-    time: new Date(m.recorded_at).getTime() / 1000,
+    time: new Date(m.recorded_at).getTime(),
     cpu: m.cpu_percent,
     memory: m.memory_mb,
     players: m.player_count,
@@ -308,9 +314,11 @@ export async function getRecentEventCount(sinceHours = 1): Promise<number> {
 
 // ─── Server Browser (via Edge Function) ─────────────────────
 
-export async function getBrowserServers(): Promise<BrowserServer[]> {
+export async function getBrowserServers(agentUrl?: string): Promise<BrowserServer[]> {
   try {
-    const { data, error } = await supabase.functions.invoke('server-browser');
+    const { data, error } = await supabase.functions.invoke('server-browser', {
+      body: agentUrl ? { agentUrl } : {},
+    });
     if (error) throw error;
     return data?.servers ?? [];
   } catch (err) {
@@ -321,9 +329,13 @@ export async function getBrowserServers(): Promise<BrowserServer[]> {
 
 // ─── Console / Commands ─────────────────────────────────
 
-export async function sendCommand(serverId: number, command: string): Promise<string> {
-  const result = await serverAction(serverId, 'command', command);
-  return result.message || `> ${command}`;
+export async function sendCommand(serverId: number, command: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    await serverAction(serverId, 'command', command);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Command failed' };
+  }
 }
 
 // ─── Password Change ─────────────────────────────────────

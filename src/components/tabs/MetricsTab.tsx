@@ -1,136 +1,142 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getMetrics } from '@/lib/supabaseApi';
-import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar } from 'recharts';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
-import { Cpu, HardDrive, Users } from 'lucide-react';
-import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useAgentWebSocket } from '@/hooks/useAgentWebSocket';
+import { Activity, Users, Cpu, MemoryStick } from 'lucide-react';
 
-const ranges = [
-  { label: '1h', hours: 1 },
-  { label: '6h', hours: 6 },
-  { label: '24h', hours: 24 },
-  { label: '7d', hours: 168 },
-];
+interface MetricData {
+  timestamp: number;
+  cpu: number;
+  memory: number;
+  player_count: number;
+}
 
-export default function MetricsTab({ serverId }: { serverId: number }) {
-  const [range, setRange] = useState(24);
+export default function MetricsTab({ serverId, agentUrl }: { serverId: number; agentUrl?: string | null }) {
+  const { metrics: liveMetrics, connected } = useAgentWebSocket(agentUrl, serverId);
+  const [timeRange, setTimeRange] = useState(1); // hours
 
-  const { data: metrics = [], isLoading, refetch } = useQuery({
-    queryKey: ['metrics', serverId, range],
-    queryFn: () => getMetrics(serverId, range),
+  const { data: historicalMetrics = [], isLoading } = useQuery({
+    queryKey: ['metrics', serverId, timeRange],
+    queryFn: () => getMetrics(serverId, timeRange),
+    refetchInterval: connected ? 30000 : 5000,
+    enabled: !connected,
   });
 
-  // Real-time subscription for new metrics
-  useEffect(() => {
-    const channel = supabase
-      .channel(`metrics-${serverId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'metrics', filter: `server_id=eq.${serverId}` }, () => {
-        refetch();
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [serverId, refetch]);
+  const allMetrics = connected && liveMetrics.length > 0
+    ? liveMetrics.map((m: any) => ({
+        timestamp: m.timestamp,
+        cpu: m.cpu || 0,
+        memory: m.memory || 0,
+        player_count: m.playerCount || m.player_count || 0,
+      }))
+    : historicalMetrics.map((m: any) => ({
+        timestamp: m.timestamp,
+        cpu: m.cpu || 0,
+        memory: m.memory || 0,
+        player_count: m.player_count || 0,
+      }));
 
-  if (isLoading) return <LoadingSpinner />;
-
-  const step = Math.max(1, Math.floor(metrics.length / 200));
-  const chartData = metrics.filter((_, i) => i % step === 0).map(m => ({
-    ...m,
-    time: new Date(m.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  const chartData = allMetrics.map((m: MetricData) => ({
+    time: new Date(m.timestamp).toLocaleTimeString(),
+    cpu: Math.round(m.cpu * 100) / 100,
+    memory: Math.round(m.memory * 100) / 100,
+    players: m.player_count,
   }));
 
-  const latest = metrics[metrics.length - 1];
+  const latest = allMetrics[allMetrics.length - 1] as MetricData | undefined;
+
+  if (isLoading && !connected) {
+    return <LoadingSpinner />;
+  }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        {ranges.map(r => (
-          <Button key={r.label} size="sm" variant={range === r.hours ? 'default' : 'outline'} onClick={() => setRange(r.hours)}
-            className="text-xs font-mono">
-            {r.label}
-          </Button>
-        ))}
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">CPU Usage</CardTitle>
+            <Cpu className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{latest ? `${latest.cpu}%` : 'N/A'}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Memory</CardTitle>
+            <MemoryStick className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{latest ? `${latest.memory} MB` : 'N/A'}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Players</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{latest ? latest.player_count : 'N/A'}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Status</CardTitle>
+            <Activity className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {connected ? 'Live' : 'Polling'}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {latest && (
-        <div className="grid grid-cols-3 gap-3">
-          <Card className="border-border bg-card">
-            <CardContent className="flex items-center gap-3 p-4">
-              <Cpu className="h-8 w-8 text-destructive" />
-              <div>
-                <div className="text-2xl font-display font-bold">{latest.cpu.toFixed(1)}%</div>
-                <div className="text-xs text-muted-foreground">CPU Usage</div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-border bg-card">
-            <CardContent className="flex items-center gap-3 p-4">
-              <HardDrive className="h-8 w-8 text-info" />
-              <div>
-                <div className="text-2xl font-display font-bold">{latest.memory.toFixed(0)} MB</div>
-                <div className="text-xs text-muted-foreground">Memory</div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-border bg-card">
-            <CardContent className="flex items-center gap-3 p-4">
-              <Users className="h-8 w-8 text-success" />
-              <div>
-                <div className="text-2xl font-display font-bold">{latest.players}</div>
-                <div className="text-xs text-muted-foreground">Players</div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>CPU & Memory</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="time" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Area type="monotone" dataKey="cpu" stroke="#2563eb" fill="#2563eb" fillOpacity={0.1} name="CPU %" />
+                  <Area type="monotone" dataKey="memory" stroke="#16a34a" fill="#16a34a" fillOpacity={0.1} name="Memory MB" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
 
-      {chartData.length > 0 ? (
-        <div className="space-y-6">
-          <Card className="border-border bg-card p-4">
-            <h3 className="font-display text-sm mb-3">CPU Usage (%)</h3>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
-                <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }} />
-                <Line type="monotone" dataKey="cpu" stroke="hsl(var(--destructive))" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </Card>
-
-          <Card className="border-border bg-card p-4">
-            <h3 className="font-display text-sm mb-3">Memory (MB)</h3>
-            <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
-                <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
-                <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }} />
-                <Area type="monotone" dataKey="memory" stroke="hsl(var(--info))" fill="hsl(var(--info) / 0.2)" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </Card>
-
-          <Card className="border-border bg-card p-4">
-            <h3 className="font-display text-sm mb-3">Player Count</h3>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
-                <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
-                <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }} />
-                <Bar dataKey="players" fill="hsl(var(--success) / 0.7)" radius={[2, 2, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </Card>
-        </div>
-      ) : (
-        <div className="text-center text-muted-foreground py-12">No metrics data available for this server</div>
-      )}
+        <Card>
+          <CardHeader>
+            <CardTitle>Player Count</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="time" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Bar dataKey="players" fill="#2563eb" name="Players" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

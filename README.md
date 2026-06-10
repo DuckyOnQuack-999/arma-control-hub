@@ -5,12 +5,12 @@ A modern web-based control panel for managing Armagetron Advanced (RetroCycles) 
 ## Features
 
 - **Multi-server management** - Control multiple game servers from a single panel
-- **Real-time console** - Live PTY output streaming
-- **Configuration editor** - Visual and raw config file editors
-- **Player management** - View, kick, ban, and silence players
+- **Real-time console** - Live PTY output streaming via WebSocket
+- **Configuration editor** - Visual and raw config file editors (KEY VALUE format)
+- **Player management** - View, kick, ban, and silence players with event tracking
 - **Server browser** - UDP master server querying with HTML fallback
 - **File management** - Browse and edit server files
-- **Metrics dashboard** - CPU, memory, and player count graphs
+- **Metrics dashboard** - CPU, memory, and player count graphs with live updates
 - **Dark theme with red accent** - Clean, modern gaming UI
 
 ## Architecture
@@ -31,11 +31,15 @@ A modern web-based control panel for managing Armagetron Advanced (RetroCycles) 
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                      Host Agent                              │
-│  • Node.js + Express + node-pty                             │
+│                      Host Agent v2                           │
+│  • Node.js + Express + node-pty + WebSocket                  │
 │  • Process management (spawn/kill PTY)                       │
 │  • File system operations                                    │
-│  • Metrics collection (pidusage)                             │
+│  • Metrics collection (pidusage) every 5s                    │
+│  • Log parsing (player join/leave/chat/kill)                 │
+│  • Config parser (KEY VALUE format, atomic writes)           │
+│  • UDP server query + master browser                         │
+│  • SQLite persistence (console, events, metrics, bans)       │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -57,6 +61,7 @@ A modern web-based control panel for managing Armagetron Advanced (RetroCycles) 
    - Real PTY spawning on host machine
    - Direct filesystem access
    - Real process metrics
+   - WebSocket console streaming
    - Requires host agent
 
 ## Quick Start
@@ -114,6 +119,9 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 The agent accepts these environment variables:
 
 - `AGENT_PORT` - Port to listen on (default: 8080)
+- `AGENT_JWT_SECRET` - JWT secret for WebSocket auth
+- `AGENT_TOKEN` - Bearer token for API auth (default: `default-agent-token`)
+- `AGENT_DB_DIR` - Directory for SQLite database (default: `./data`)
 
 ### Creating a Server
 
@@ -166,6 +174,60 @@ npm run build
 # Lint code
 npm run lint
 ```
+
+## Agent API
+
+The agent exposes these endpoints:
+
+### Process Control
+- `POST /api/servers/:id/start` - Start server
+- `POST /api/servers/:id/stop` - Stop server (sends QUIT)
+- `POST /api/servers/:id/kill` - Kill server (SIGKILL)
+- `POST /api/servers/:id/restart` - Restart server
+- `POST /api/servers/:id/command` - Send console command
+
+### Status & Metrics
+- `GET /api/servers/:id/status` - Get server status
+- `GET /api/servers/:id/metrics` - Get historical metrics
+- `GET /api/servers/:id/metrics/live` - Get live metrics from memory
+
+### Console
+- `GET /api/servers/:id/console` - Get console lines
+- `GET /api/servers/:id/console/live` - Get live console buffer
+
+### Config
+- `GET /api/servers/:id/configs` - List config files
+- `GET /api/servers/:id/configs/:name` - Read config file
+- `POST /api/servers/:id/configs/:name` - Write config file
+
+### Players
+- `GET /api/servers/:id/players` - List online players
+- `GET /api/servers/:id/players/events` - Get player events
+- `POST /api/servers/:id/players/:name/kick` - Kick player
+- `POST /api/servers/:id/players/:name/ban` - Ban player
+- `POST /api/servers/:id/players/:name/silence` - Silence player
+
+### Bans
+- `GET /api/servers/:id/bans` - List bans
+- `DELETE /api/servers/:id/bans/:name` - Remove ban
+
+### Logs
+- `GET /api/servers/:id/logs` - List log files
+- `GET /api/servers/:id/logs/:filename` - Read log file (with tail)
+
+### Files
+- `GET /api/servers/:id/files?dir=` - List files in directory
+- `GET /api/servers/:id/files/*` - Read file
+- `POST /api/servers/:id/files/*` - Write file
+
+### Browser
+- `GET /api/browser` - List public servers
+- `GET /api/browser/query?ip=&port=` - Query specific server
+
+### WebSocket
+- `ws://host:port/ws?token=` - WebSocket endpoint
+  - Subscribe: `{ type: 'subscribe', channel: 'console|metrics', serverId: '1' }`
+  - Command: `{ type: 'command', serverId: '1', command: 'PLAYERS' }`
 
 ## License
 

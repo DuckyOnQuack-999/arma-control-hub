@@ -135,7 +135,7 @@ const ServerDetailPage = () => {
         <TabsContent value="players"><PlayersTab serverId={serverId} /></TabsContent>
         <TabsContent value="files"><FilesTab serverId={serverId} agentUrl={server.agent_url} /></TabsContent>
         <TabsContent value="logs"><LogsTab serverId={serverId} /></TabsContent>
-        <TabsContent value="metrics"><MetricsTab serverId={serverId} /></TabsContent>
+        <TabsContent value="metrics"><MetricsTab serverId={serverId} agentUrl={server.agent_url} /></TabsContent>
         <TabsContent value="maps"><MapsTab serverId={serverId} /></TabsContent>
       </Tabs>
     </div>

@@ -1,593 +1,446 @@
 /**
- * RetroCycles/Armagetron Advanced - Host Agent
+ * RetroCycles/Armagetron Advanced - Host Agent v2
  *
- * This agent runs on the same machine as the game servers and handles:
- * - Process management via PTY (start/stop/restart/kill)
- * - Real-time console output streaming
- * - File system operations
- * - Status and metrics collection
- *
- * The panel communicates with this agent via HTTP.
+ * Enhanced agent with:
+ * - PTY process management
+ * - Real-time WebSocket console streaming
+ * - Log parsing for player events
+ * - Metrics collection (CPU/memory/players)
+ * - Config parser (KEY VALUE format)
+ * - UDP server query + master browser
+ * - SQLite persistence for console, events, metrics
  */
 
 import express, { Request, Response } from 'express';
 import cors from 'cors';
-import * as pty from 'node-pty';
+import { WebSocketServer } from 'ws';
+import { createServer } from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
-import pidusage from 'pidusage';
-import { v4 as uuidv4 } from 'uuid';
+import jwt from 'jsonwebtoken';
 
-const app = express();
+import {
+  startServer,
+  stopServer,
+  killServer,
+  restartServer,
+  sendCommand,
+  getProcessInfo,
+  getAllProcesses,
+  getConsoleHistory,
+} from './processManager';
+
+import {
+  parseConfigFile,
+  writeConfigAtomic,
+  getConfigFilePath,
+  listConfigFiles,
+} from './configParser';
+
+import {
+  startMetricsCollector,
+  stopMetricsCollector,
+  getMetricsHistory,
+} from './metricsCollector';
+
+import {
+  queryServer,
+  queryMasterServers,
+  fallbackScrape,
+} from './serverQuery';
+
+import {
+  getConsoleLines,
+  getPlayerEvents,
+  getMetrics,
+  getBans,
+  insertBan,
+  removeBan,
+} from './db';
+
+import { setupWebSocketServer } from './websocket';
+
+// Config
 const PORT = process.env.AGENT_PORT ? parseInt(process.env.AGENT_PORT) : 8080;
+const JWT_SECRET = process.env.AGENT_JWT_SECRET || 'retrocycles-agent-secret-change-in-production';
+const AGENT_TOKEN = process.env.AGENT_TOKEN || 'default-agent-token';
 
-// Middleware
+// Express setup
+const app = express();
+const server = createServer(app);
+const wss = new WebSocketServer({ server, path: '/ws' });
+
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// Types
-interface ServerProcess {
-  id: string;
-  ptyProcess: pty.IPty;
-  config: ServerConfig;
-  status: 'online' | 'offline' | 'starting' | 'stopping' | 'crashed';
-  startTime: number;
-  consoleBuffer: ConsoleLine[];
-  pid?: number;
-}
-
-interface ServerConfig {
-  id: number;
-  name: string;
-  executablePath: string;
-  dataDir: string;
-  configDir: string;
-  port: number;
-  maxPlayers: number;
-  autoRestart: boolean;
-}
-
-interface ConsoleLine {
-  type: 'system' | 'info' | 'warning' | 'error' | 'chat' | 'player';
-  text: string;
-  timestamp: number;
-}
-
-interface ProcessInfo {
-  status: string;
-  player_count: number;
-  cpu_percent: number;
-  memory_mb: number;
-  uptime: number;
-  current_map: string;
-}
-
-// State
-const processes = new Map<string, ServerProcess>();
-const MAX_CONSOLE_BUFFER = 500;
-
-// Helper: Parse console output
-function parseConsoleLine(text: string): ConsoleLine {
-  const lower = text.toLowerCase();
-
-  if (lower.includes('error') || lower.includes('failed') || lower.includes('fatal')) {
-    return { type: 'error', text, timestamp: Date.now() };
-  }
-  if (lower.includes('warning') || lower.includes('warn')) {
-    return { type: 'warning', text, timestamp: Date.now() };
-  }
-  if (lower.includes('player') && (lower.includes('joined') || lower.includes('left'))) {
-    return { type: 'player', text, timestamp: Date.now() };
-  }
-  if (lower.includes('chat') || text.includes(': ')) {
-    return { type: 'chat', text, timestamp: Date.now() };
+// Auth middleware
+function authenticate(req: Request, res: Response, next: Function) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  return { type: 'info', text, timestamp: Date.now() };
-}
-
-// Helper: Strip ANSI codes
-function stripAnsi(text: string): string {
-  return text.replace(/\x1b\[[0-9;]*m/g, '');
-}
-
-// Helper: Write config files
-function writeConfigFiles(configDir: string, configs: Record<string, string>): void {
-  if (!fs.existsSync(configDir)) {
-    fs.mkdirSync(configDir, { recursive: true });
-  }
-
-  // Group by filename
-  const files: Record<string, string[]> = {};
-  for (const [key, value] of Object.entries(configs)) {
-    // Default to settings_custom.cfg
-    const filename = 'settings_custom.cfg';
-    if (!files[filename]) files[filename] = [];
-    files[filename].push(`${key} ${value}`);
-  }
-
-  // Write each file
-  for (const [filename, lines] of Object.entries(files)) {
-    const filepath = path.join(configDir, filename);
-    fs.writeFileSync(filepath, lines.join('\n') + '\n', 'utf-8');
-  }
-}
-
-// Start a server process
-function startServer(config: ServerConfig, configs?: Record<string, string>): ServerProcess {
-  const id = uuidv4();
-
-  // Write config files if provided
-  if (configs) {
-    writeConfigFiles(config.configDir, configs);
-  }
-
-  // Build command arguments
-  const args = [
-    '--datadir', config.dataDir,
-    '--configdir', config.configDir,
-    '--port', String(config.port),
-  ];
-
-  console.log(`Starting server: ${config.executablePath} ${args.join(' ')}`);
-
-  // Spawn PTY process
-  const ptyProcess = pty.spawn(config.executablePath, args, {
-    name: 'xterm-256color',
-    cols: 120,
-    rows: 40,
-    cwd: config.dataDir,
-    env: process.env as Record<string, string>,
-  });
-
-  const serverProcess: ServerProcess = {
-    id,
-    ptyProcess,
-    config,
-    status: 'starting',
-    startTime: Date.now(),
-    consoleBuffer: [],
-  };
-
-  // Handle PTY output
-  ptyProcess.onData((data: string) => {
-    const cleanData = stripAnsi(data);
-    const lines = cleanData.split('\n').filter(l => l.trim());
-
-    for (const line of lines) {
-      const consoleLine = parseConsoleLine(line.trim());
-      serverProcess.consoleBuffer.push(consoleLine);
-
-      // Trim buffer
-      if (serverProcess.consoleBuffer.length > MAX_CONSOLE_BUFFER) {
-        serverProcess.consoleBuffer.shift();
-      }
+  const token = authHeader.substring(7);
+  if (token !== AGENT_TOKEN) {
+    try {
+      jwt.verify(token, JWT_SECRET);
+    } catch (e) {
+      return res.status(401).json({ error: 'Invalid token' });
     }
+  }
 
-    // Detect successful start
-    if (serverProcess.status === 'starting') {
-      if (cleanData.toLowerCase().includes('listening') ||
-          cleanData.toLowerCase().includes('bound to port') ||
-          cleanData.toLowerCase().includes('server started')) {
-        serverProcess.status = 'online';
-      }
-    }
-
-    // Log to console
-    process.stdout.write(`[${config.name}] ${cleanData}`);
-  });
-
-  // Handle process exit
-  ptyProcess.onExit(({ exitCode }: { exitCode: number }) => {
-    console.log(`Server ${config.name} exited with code ${exitCode}`);
-    serverProcess.status = exitCode === 0 ? 'offline' : 'crashed';
-    serverProcess.pid = undefined;
-
-    // Auto-restart if enabled
-    if (config.autoRestart && serverProcess.status === 'crashed') {
-      console.log(`Auto-restarting ${config.name} in 5 seconds...`);
-      setTimeout(() => {
-        startServer(config);
-      }, 5000);
-    }
-  });
-
-  // Get PID
-  serverProcess.pid = ptyProcess.pid;
-
-  // Store process
-  processes.set(id, serverProcess);
-
-  // Set status to online after brief delay if no startup message detected
-  setTimeout(() => {
-    if (serverProcess.status === 'starting') {
-      serverProcess.status = 'online';
-    }
-  }, 3000);
-
-  return serverProcess;
+  next();
 }
-
-// Stop a server process
-async function stopServer(serverProcess: ServerProcess): Promise<void> {
-  if (serverProcess.status === 'offline') return;
-
-  serverProcess.status = 'stopping';
-
-  // Send QUIT command
-  serverProcess.ptyProcess.write('QUIT\n');
-
-  // Wait for graceful shutdown
-  await new Promise<void>((resolve) => {
-    const timeout = setTimeout(() => {
-      // Force kill after 10 seconds
-      if (serverProcess.pid) {
-        try {
-          process.kill(serverProcess.pid, 'SIGTERM');
-        } catch {}
-      }
-      resolve();
-    }, 10000);
-
-    serverProcess.ptyProcess.onExit(() => {
-      clearTimeout(timeout);
-      resolve();
-    });
-  });
-
-  serverProcess.status = 'offline';
-}
-
-// API Routes
 
 // Health check
 app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', version: '1.0.0', uptime: process.uptime() });
+  res.json({ status: 'ok', version: '2.0.0', timestamp: Date.now() });
 });
 
-// Server control - start
-app.post('/control', async (req: Request, res: Response) => {
-  const { serverId, action, command, config, configs } = req.body;
+// ========== SERVER CONTROL ==========
 
-  try {
-    switch (action) {
-      case 'start': {
-        // Find existing or create new
-        let existingProcess: ServerProcess | undefined;
-        for (const proc of processes.values()) {
-          if (proc.config.id === serverId) {
-            existingProcess = proc;
-            break;
-          }
-        }
-
-        if (existingProcess && existingProcess.status !== 'offline' && existingProcess.status !== 'crashed') {
-          return res.status(400).json({ error: `Server is already ${existingProcess.status}` });
-        }
-
-        if (existingProcess) {
-          // Restart existing
-          processes.delete(existingProcess.id);
-        }
-
-        const serverConfig: ServerConfig = config || {
-          id: serverId,
-          name: `Server ${serverId}`,
-          executablePath: '/usr/bin/armagetronad-dedicated',
-          dataDir: '/usr/share/armagetronad',
-          configDir: `/etc/armagetronad/${serverId}`,
-          port: 4534,
-          maxPlayers: 16,
-          autoRestart: true,
-        };
-
-        const proc = startServer(serverConfig, configs);
-        return res.json({
-          success: true,
-          status: proc.status,
-          message: `Server started with PID ${proc.pid}`,
-          processId: proc.id,
-        });
-      }
-
-      case 'stop': {
-        let serverProcess: ServerProcess | undefined;
-        for (const proc of processes.values()) {
-          if (proc.config.id === serverId) {
-            serverProcess = proc;
-            break;
-          }
-        }
-
-        if (!serverProcess) {
-          return res.status(404).json({ error: 'Server process not found' });
-        }
-
-        await stopServer(serverProcess);
-        return res.json({
-          success: true,
-          status: serverProcess.status,
-          message: 'Server stopped',
-        });
-      }
-
-      case 'restart': {
-        let serverProcess: ServerProcess | undefined;
-        for (const proc of processes.values()) {
-          if (proc.config.id === serverId) {
-            serverProcess = proc;
-            break;
-          }
-        }
-
-        if (!serverProcess) {
-          return res.status(404).json({ error: 'Server process not found' });
-        }
-
-        const oldConfig = serverProcess.config;
-        await stopServer(serverProcess);
-
-        // Wait a moment
-        await new Promise(r => setTimeout(r, 1000));
-
-        const newProc = startServer(oldConfig);
-        return res.json({
-          success: true,
-          status: newProc.status,
-          message: 'Server restarted',
-          processId: newProc.id,
-        });
-      }
-
-      case 'kill': {
-        let serverProcess: ServerProcess | undefined;
-        for (const proc of processes.values()) {
-          if (proc.config.id === serverId) {
-            serverProcess = proc;
-            break;
-          }
-        }
-
-        if (!serverProcess) {
-          return res.status(404).json({ error: 'Server process not found' });
-        }
-
-        if (serverProcess.pid) {
-          try {
-            process.kill(serverProcess.pid, 'SIGKILL');
-          } catch {}
-        }
-
-        serverProcess.status = 'offline';
-        return res.json({
-          success: true,
-          status: 'offline',
-          message: 'Server killed',
-        });
-      }
-
-      case 'command': {
-        if (!command) {
-          return res.status(400).json({ error: 'command required for command action' });
-        }
-
-        let serverProcess: ServerProcess | undefined;
-        for (const proc of processes.values()) {
-          if (proc.config.id === serverId) {
-            serverProcess = proc;
-            break;
-          }
-        }
-
-        if (!serverProcess || serverProcess.status !== 'online') {
-          return res.status(400).json({ error: 'Server not online' });
-        }
-
-        serverProcess.ptyProcess.write(command + '\n');
-        return res.json({
-          success: true,
-          message: `Command sent: ${command}`,
-        });
-      }
-
-      default:
-        return res.status(400).json({ error: `Unknown action: ${action}` });
-    }
-  } catch (error: any) {
-    console.error('Control error:', error);
-    return res.status(500).json({ error: error.message });
-  }
+app.post('/api/servers/:id/start', authenticate, (req: Request, res: Response) => {
+  const config = req.body;
+  const result = startServer(config);
+  res.status(result.success ? 200 : 400).json(result);
 });
 
-// Server status
-app.get('/status', async (req: Request, res: Response) => {
-  const serverId = parseInt(req.query.serverId as string);
-
-  try {
-    let serverProcess: ServerProcess | undefined;
-    for (const proc of processes.values()) {
-      if (proc.config.id === serverId) {
-        serverProcess = proc;
-        break;
-      }
-    }
-
-    if (!serverProcess) {
-      return res.json({
-        status: 'offline',
-        player_count: 0,
-        cpu_percent: 0,
-        memory_mb: 0,
-        uptime: 0,
-        current_map: '',
-      });
-    }
-
-    let cpuPercent = 0;
-    let memoryMb = 0;
-
-    if (serverProcess.pid && serverProcess.status === 'online') {
-      try {
-        const stats = await pidusage(serverProcess.pid);
-        cpuPercent = stats.cpu;
-        memoryMb = stats.memory / (1024 * 1024);
-      } catch {
-        // Process might have just exited
-      }
-    }
-
-    const uptime = serverProcess.status === 'online'
-      ? Math.floor((Date.now() - serverProcess.startTime) / 1000)
-      : 0;
-
-    // Count players from console buffer (simplified)
-    const playerCount = 0; // Would need proper parsing
-
-    return res.json({
-      status: serverProcess.status,
-      player_count: playerCount,
-      cpu_percent: Math.round(cpuPercent * 10) / 10,
-      memory_mb: Math.round(memoryMb * 10) / 10,
-      uptime,
-      current_map: '',
-      agent_version: '1.0.0',
-    });
-  } catch (error: any) {
-    return res.status(500).json({ error: error.message });
-  }
+app.post('/api/servers/:id/stop', authenticate, (req: Request, res: Response) => {
+  const result = stopServer(req.params.id);
+  res.status(result.success ? 200 : 400).json(result);
 });
 
-// Console output
-app.get('/console', (req: Request, res: Response) => {
-  const serverId = parseInt(req.query.serverId as string);
-  const since = parseInt(req.query.since as string) || 0;
+app.post('/api/servers/:id/kill', authenticate, (req: Request, res: Response) => {
+  const result = killServer(req.params.id);
+  res.status(result.success ? 200 : 400).json(result);
+});
 
-  let serverProcess: ServerProcess | undefined;
-  for (const proc of processes.values()) {
-    if (proc.config.id === serverId) {
-      serverProcess = proc;
-      break;
-    }
+app.post('/api/servers/:id/restart', authenticate, (req: Request, res: Response) => {
+  const result = restartServer(req.params.id);
+  res.status(result.success ? 200 : 400).json(result);
+});
+
+app.post('/api/servers/:id/command', authenticate, (req: Request, res: Response) => {
+  const { command } = req.body;
+  if (!command || command.length > 500) {
+    return res.status(400).json({ error: 'Invalid command' });
+  }
+  const result = sendCommand(req.params.id, command);
+  res.status(result.success ? 200 : 400).json(result);
+});
+
+// ========== STATUS & METRICS ==========
+
+app.get('/api/servers/:id/status', authenticate, (req: Request, res: Response) => {
+  const info = getProcessInfo(req.params.id);
+  if (!info) {
+    return res.json({ status: 'offline', player_count: 0, cpu_percent: 0, memory_mb: 0, uptime: 0, current_map: '' });
+  }
+  res.json(info);
+});
+
+app.get('/api/servers/:id/metrics', authenticate, (req: Request, res: Response) => {
+  const hours = parseInt(req.query.hours as string) || 24;
+  const metrics = getMetrics(req.params.id, hours);
+  res.json(metrics);
+});
+
+app.get('/api/servers/:id/metrics/live', authenticate, (req: Request, res: Response) => {
+  const hours = parseInt(req.query.hours as string) || 1;
+  const metrics = getMetricsHistory(req.params.id, hours);
+  res.json(metrics);
+});
+
+// ========== CONSOLE ==========
+
+app.get('/api/servers/:id/console', authenticate, (req: Request, res: Response) => {
+  const limit = parseInt(req.query.limit as string) || 500;
+  const before = req.query.before ? parseInt(req.query.before as string) : undefined;
+  const lines = getConsoleLines(req.params.id, limit, before);
+  res.json(lines);
+});
+
+app.get('/api/servers/:id/console/live', authenticate, (req: Request, res: Response) => {
+  const history = getConsoleHistory(req.params.id);
+  res.json(history);
+});
+
+// ========== CONFIG ==========
+
+app.get('/api/servers/:id/configs', authenticate, (req: Request, res: Response) => {
+  const serverId = req.params.id;
+  const proc = getAllProcesses().get(serverId);
+  if (!proc) {
+    return res.status(404).json({ error: 'Server not running' });
   }
 
-  if (!serverProcess) {
-    return res.json({ lines: [] });
+  const files = listConfigFiles(proc.config.dataDir);
+  res.json(files);
+});
+
+app.get('/api/servers/:id/configs/:name', authenticate, (req: Request, res: Response) => {
+  const serverId = req.params.id;
+  const proc = getAllProcesses().get(serverId);
+  if (!proc) {
+    return res.status(404).json({ error: 'Server not running' });
   }
 
-  const lines = serverProcess.consoleBuffer
-    .filter(l => l.timestamp > since)
-    .map(l => ({
-      type: l.type,
-      text: l.text,
-      timestamp: l.timestamp,
+  const filePath = getConfigFilePath(proc.config.dataDir, req.params.name);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Config not found' });
+  }
+
+  const config = parseConfigFile(filePath);
+  res.json(config);
+});
+
+app.post('/api/servers/:id/configs/:name', authenticate, (req: Request, res: Response) => {
+  const serverId = req.params.id;
+  const proc = getAllProcesses().get(serverId);
+  if (!proc) {
+    return res.status(404).json({ error: 'Server not running' });
+  }
+
+  const filePath = getConfigFilePath(proc.config.dataDir, req.params.name);
+  writeConfigAtomic(filePath, req.body);
+  res.json({ success: true });
+});
+
+// ========== PLAYERS ==========
+
+app.get('/api/servers/:id/players', authenticate, (req: Request, res: Response) => {
+  const proc = getAllProcesses().get(req.params.id);
+  if (!proc) {
+    return res.json([]);
+  }
+
+  const players = Array.from(proc.players.values()).map(p => ({
+    name: p.name,
+    score: p.score || 0,
+    is_silenced: p.isSilenced,
+    is_banned: p.isBanned,
+    joined_at: p.joinedAt,
+  }));
+
+  res.json(players);
+});
+
+app.get('/api/servers/:id/players/events', authenticate, (req: Request, res: Response) => {
+  const limit = parseInt(req.query.limit as string) || 100;
+  const events = getPlayerEvents(req.params.id, limit);
+  res.json(events);
+});
+
+app.post('/api/servers/:id/players/:name/kick', authenticate, (req: Request, res: Response) => {
+  const { reason } = req.body;
+  const result = sendCommand(req.params.id, `KICK ${req.params.name}${reason ? ` ${reason}` : ''}`);
+  res.status(result.success ? 200 : 400).json(result);
+});
+
+app.post('/api/servers/:id/players/:name/ban', authenticate, (req: Request, res: Response) => {
+  const { reason, duration } = req.body;
+  const serverId = req.params.id;
+  const playerName = req.params.name;
+
+  const result = sendCommand(serverId, `BAN ${playerName}${reason ? ` ${reason}` : ''}`);
+  if (result.success) {
+    const expiresAt = duration ? Date.now() + duration * 1000 : undefined;
+    insertBan(serverId, playerName, undefined, reason, 'admin', expiresAt);
+  }
+  res.status(result.success ? 200 : 400).json(result);
+});
+
+app.post('/api/servers/:id/players/:name/silence', authenticate, (req: Request, res: Response) => {
+  const result = sendCommand(req.params.id, `SILENCE ${req.params.name}`);
+  res.status(result.success ? 200 : 400).json(result);
+});
+
+// ========== BANS ==========
+
+app.get('/api/servers/:id/bans', authenticate, (req: Request, res: Response) => {
+  const bans = getBans(req.params.id);
+  res.json(bans);
+});
+
+app.delete('/api/servers/:id/bans/:name', authenticate, (req: Request, res: Response) => {
+  removeBan(req.params.id, req.params.name);
+  res.json({ success: true });
+});
+
+// ========== LOGS ==========
+
+app.get('/api/servers/:id/logs', authenticate, (req: Request, res: Response) => {
+  const serverId = req.params.id;
+  const proc = getAllProcesses().get(serverId);
+  if (!proc) {
+    return res.json([]);
+  }
+
+  const logDir = path.join(proc.config.dataDir, 'logs');
+  if (!fs.existsSync(logDir)) {
+    return res.json([]);
+  }
+
+  const files = fs.readdirSync(logDir)
+    .filter(f => f.endsWith('.log'))
+    .map(f => ({
+      name: f,
+      size: fs.statSync(path.join(logDir, f)).size,
+      modified: fs.statSync(path.join(logDir, f)).mtime,
     }));
 
-  return res.json({ lines });
+  res.json(files);
 });
 
-// File operations
-app.get('/files', (req: Request, res: Response) => {
-  const dirPath = req.query.path as string || '/';
+app.get('/api/servers/:id/logs/:filename', authenticate, (req: Request, res: Response) => {
+  const serverId = req.params.id;
+  const proc = getAllProcesses().get(serverId);
+  if (!proc) {
+    return res.status(404).json({ error: 'Server not running' });
+  }
 
+  const logPath = path.join(proc.config.dataDir, 'logs', path.basename(req.params.filename));
+  if (!fs.existsSync(logPath)) {
+    return res.status(404).json({ error: 'Log not found' });
+  }
+
+  const tail = parseInt(req.query.tail as string) || 100;
+  const content = fs.readFileSync(logPath, 'utf-8');
+  const lines = content.split('\n').slice(-tail);
+
+  res.json({ lines, totalLines: content.split('\n').length });
+});
+
+// ========== FILES ==========
+
+app.get('/api/servers/:id/files', authenticate, (req: Request, res: Response) => {
+  const serverId = req.params.id;
+  const proc = getAllProcesses().get(serverId);
+  if (!proc) {
+    return res.status(404).json({ error: 'Server not running' });
+  }
+
+  const dir = req.query.dir as string || '';
+  const safeDir = path.normalize(dir).replace(/^(\.\.(\/|$))+/, '');
+  const fullPath = path.join(proc.config.dataDir, safeDir);
+
+  if (!fullPath.startsWith(proc.config.dataDir)) {
+    return res.status(403).json({ error: 'Path traversal detected' });
+  }
+
+  if (!fs.existsSync(fullPath)) {
+    return res.status(404).json({ error: 'Directory not found' });
+  }
+
+  const entries = fs.readdirSync(fullPath, { withFileTypes: true }).map(entry => ({
+    name: entry.name,
+    type: entry.isDirectory() ? 'directory' : 'file',
+    size: entry.isFile() ? fs.statSync(path.join(fullPath, entry.name)).size : 0,
+    modified: fs.statSync(path.join(fullPath, entry.name)).mtime,
+  }));
+
+  res.json(entries);
+});
+
+app.get('/api/servers/:id/files/*', authenticate, (req: Request, res: Response) => {
+  const serverId = req.params.id;
+  const proc = getAllProcesses().get(serverId);
+  if (!proc) {
+    return res.status(404).json({ error: 'Server not running' });
+  }
+
+  const filePath = path.join(proc.config.dataDir, req.params[0]);
+  if (!filePath.startsWith(proc.config.dataDir)) {
+    return res.status(403).json({ error: 'Path traversal detected' });
+  }
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+
+  const content = fs.readFileSync(filePath, 'utf-8');
+  res.json({ content, path: req.params[0] });
+});
+
+app.post('/api/servers/:id/files/*', authenticate, (req: Request, res: Response) => {
+  const serverId = req.params.id;
+  const proc = getAllProcesses().get(serverId);
+  if (!proc) {
+    return res.status(404).json({ error: 'Server not running' });
+  }
+
+  const filePath = path.join(proc.config.dataDir, req.params[0]);
+  if (!filePath.startsWith(proc.config.dataDir)) {
+    return res.status(403).json({ error: 'Path traversal detected' });
+  }
+
+  fs.writeFileSync(filePath, req.body.content, 'utf-8');
+  res.json({ success: true });
+});
+
+// ========== SERVER BROWSER ==========
+
+app.get('/api/browser', authenticate, async (_req: Request, res: Response) => {
   try {
-    if (!fs.existsSync(dirPath)) {
-      return res.json({ files: [] });
+    const servers = await queryMasterServers();
+    if (servers.length === 0) {
+      const fallback = await fallbackScrape();
+      return res.json(fallback);
     }
-
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-    const files = entries.map(entry => ({
-      name: entry.name,
-      type: entry.isDirectory() ? 'directory' : 'file',
-      size: entry.isFile() ? fs.statSync(path.join(dirPath, entry.name)).size : 0,
-      modified: fs.statSync(path.join(dirPath, entry.name)).mtime.toISOString(),
-    }));
-
-    // Sort: directories first, then by name
-    files.sort((a, b) => {
-      if (a.type === 'directory' && b.type !== 'directory') return -1;
-      if (a.type !== 'directory' && b.type === 'directory') return 1;
-      return a.name.localeCompare(b.name);
-    });
-
-    return res.json({ files });
-  } catch (error: any) {
-    return res.status(500).json({ error: error.message });
+    res.json(servers);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
   }
 });
 
-app.get('/files/read', (req: Request, res: Response) => {
-  const filePath = req.query.path as string;
+app.get('/api/browser/query', authenticate, async (req: Request, res: Response) => {
+  const { ip, port } = req.query;
+  if (!ip || !port) {
+    return res.status(400).json({ error: 'IP and port required' });
+  }
 
   try {
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'File not found' });
-    }
-
-    const content = fs.readFileSync(filePath, 'utf-8');
-    return res.json({ content });
-  } catch (error: any) {
-    return res.status(500).json({ error: error.message });
+    const result = await queryServer(ip as string, parseInt(port as string));
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
   }
 });
 
-app.post('/files/write', (req: Request, res: Response) => {
-  const { path: filePath, content } = req.body;
+// ========== STARTUP ==========
 
-  try {
-    // Ensure parent directory exists
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+setupWebSocketServer(wss);
+startMetricsCollector();
 
-    fs.writeFileSync(filePath, content, 'utf-8');
-    return res.json({ success: true, message: 'File saved' });
-  } catch (error: any) {
-    return res.status(500).json({ error: error.message });
-  }
+server.listen(PORT, () => {
+  console.log(`[AGENT] RetroCycles Agent v2.0.0 listening on port ${PORT}`);
+  console.log(`[AGENT] WebSocket available at ws://localhost:${PORT}/ws`);
+  console.log(`[AGENT] Metrics collector started (5s interval)`);
 });
 
-app.post('/files/rename', (req: Request, res: Response) => {
-  const { oldPath, newPath } = req.body;
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('[AGENT] Shutting down...');
+  stopMetricsCollector();
 
-  try {
-    fs.renameSync(oldPath, newPath);
-    return res.json({ success: true });
-  } catch (error: any) {
-    return res.status(500).json({ error: error.message });
+  for (const [serverId, proc] of getAllProcesses()) {
+    stopServer(serverId);
   }
+
+  server.close(() => {
+    process.exit(0);
+  });
 });
 
-app.post('/files/delete', (req: Request, res: Response) => {
-  const { path: filePath } = req.body;
+process.on('SIGINT', () => {
+  console.log('[AGENT] Interrupted, shutting down...');
+  stopMetricsCollector();
 
-  try {
-    if (fs.statSync(filePath).isDirectory()) {
-      fs.rmSync(filePath, { recursive: true });
-    } else {
-      fs.unlinkSync(filePath);
-    }
-    return res.json({ success: true });
-  } catch (error: any) {
-    return res.status(500).json({ error: error.message });
+  for (const [serverId, proc] of getAllProcesses()) {
+    stopServer(serverId);
   }
-});
 
-app.post('/files/mkdir', (req: Request, res: Response) => {
-  const { path: dirPath } = req.body;
-
-  try {
-    fs.mkdirSync(dirPath, { recursive: true });
-    return res.json({ success: true });
-  } catch (error: any) {
-    return res.status(500).json({ error: error.message });
-  }
-});
-
-// Start server
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`RetroCycles Agent running on port ${PORT}`);
-  console.log(`Health: http://localhost:${PORT}/health`);
-  console.log(`Control: POST http://localhost:${PORT}/control`);
-  console.log(`Status: GET http://localhost:${PORT}/status?serverId=X`);
+  server.close(() => {
+    process.exit(0);
+  });
 });
