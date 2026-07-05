@@ -92,6 +92,7 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
     max_players: 16,
     auto_restart: true,
     agent_url: '',
+    agent_token: '',
   });
 
   const handleTemplateChange = (value: string) => {
@@ -189,7 +190,7 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
     onCreated();
     onClose();
     // Reset form
-    setForm({ name: '', executable_path: '/usr/bin/armagetronad-dedicated', data_dir: '/usr/share/armagetronad', config_dir: '/etc/armagetronad/new', port: 4534, max_players: 16, auto_restart: true, agent_url: '' });
+    setForm({ name: '', executable_path: '/usr/bin/armagetronad-dedicated', data_dir: '/usr/share/armagetronad', config_dir: '/etc/armagetronad/new', port: 4534, max_players: 16, auto_restart: true, agent_url: '', agent_token: '' });
     setTemplate('default');
     setCustomConfig(CONFIG_TEMPLATES.default.config);
     setLoading(false);
@@ -266,9 +267,24 @@ export function CreateServerModal({ open, onClose, onCreated }: Props) {
               placeholder="http://192.168.1.10:8080"
             />
             <p className="text-xs text-muted-foreground">
-              Leave empty to use panel-managed mode (simulated). Set this to enable real process control via a host agent.
+              URL of the host agent running on your VPS. Leave empty for database-only mode.
             </p>
           </div>
+
+          {form.agent_url && (
+            <div className="space-y-2">
+              <Label>Agent Token</Label>
+              <Input
+                type="password"
+                value={form.agent_token}
+                onChange={(e) => setForm({ ...form, agent_token: e.target.value })}
+                placeholder="Secret token for agent authentication"
+              />
+              <p className="text-xs text-muted-foreground">
+                Token configured in your agent's AGENT_TOKEN environment variable.
+              </p>
+            </div>
+          )}
 
           {/* Advanced */}
           <Button

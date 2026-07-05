@@ -12,6 +12,7 @@ interface ServerRow {
   port: number;
   max_players: number;
   agent_url: string;
+  agent_token?: string;
   auto_restart: boolean;
 }
 
@@ -22,6 +23,7 @@ interface AgentResponse {
   cpu_percent?: number;
   memory_mb?: number;
   console_lines?: Array<{ type?: string; text?: string }>;
+  success?: boolean;
   [key: string]: unknown;
 }
 
@@ -64,11 +66,14 @@ Deno.serve(async (req) => {
     if (authResult instanceof Response) return authResult;
     const { user, supabase } = authResult;
 
-    const hasRole = await requireRole(user.id, ['admin', 'operator']);
-    if (hasRole instanceof Response) return hasRole;
+    // Fix: requireRole expects (supabase, userId, roles) and returns boolean
+    const hasRole = await requireRole(supabase, user.id, ['admin', 'operator', 'moderator']);
+    if (!hasRole) {
+      return corsError('Insufficient permissions', 403);
+    }
 
     const body = await req.json().catch(() => ({}));
-    const { serverId, action, command, config } = body;
+    const { serverId, action, command } = body;
 
     if (!serverId) return corsError('serverId required');
     if (!action) return corsError('action required');
@@ -156,13 +161,19 @@ Deno.serve(async (req) => {
             );
           }
 
-          // Log event
-          await logServerEvent(supabase, server.id, action, user.id);
-          await logAudit(supabase, user.id, `server_${action}`, `Server ${server.name} (${server.id})`, { command: sanitized });
+          // Fix: logServerEvent expects payload object as 4th param
+          await logServerEvent(supabase, server.id, action, { user_id: user.id, source: 'agent' });
 
-          // Write console line for command
+          // Fix: logAudit expects (supabase, userId, action, targetType, targetId, details)
+          await logAudit(supabase, user.id, `server_${action}`, 'server', String(server.id), {
+            server_name: server.name,
+            command: action === 'command' ? command : undefined
+          });
+
+          // Fix: writeConsoleLine expects 5 params including source
           if (action === 'command') {
-            await writeConsoleLine(supabase, server.id, 'command', `> ${sanitized}`);
+            const sanitized = sanitizeCommand(command || '');
+            await writeConsoleLine(supabase, server.id, 'command', `> ${sanitized}`, 'panel');
           }
 
           return corsResponse({
@@ -173,10 +184,11 @@ Deno.serve(async (req) => {
         }
       } catch (fetchErr) {
         console.error('Agent fetch error:', fetchErr);
+        // Continue to fallback
       }
     }
 
-    // DB fallback
+    // DB fallback - no agent available or agent failed
     const statusMap: Record<string, string> = {
       start: 'online',
       stop: 'offline',
@@ -193,15 +205,20 @@ Deno.serve(async (req) => {
 
     if (action === 'command') {
       const sanitized = sanitizeCommand(command || '');
-      await writeConsoleLine(supabase, server.id, 'command', `> ${sanitized}`);
+      await writeConsoleLine(supabase, server.id, 'command', `> ${sanitized}`, 'panel');
     }
 
-    await logServerEvent(supabase, server.id, action, user.id);
-    await logAudit(supabase, user.id, `server_${action}`, `Server ${server.name} (${server.id})`, { command: command || '' });
+    // Fix: logServerEvent and logAudit with correct params
+    await logServerEvent(supabase, server.id, action, { user_id: user.id, source: 'fallback' });
+    await logAudit(supabase, user.id, `server_${action}`, 'server', String(server.id), {
+      server_name: server.name,
+      command: command || ''
+    });
 
+    const agentConfigured = server.agent_url && validateAgentUrl(server.agent_url);
     return corsResponse({
       success: true,
-      message: `${action} executed (fallback)`,
+      message: `${action} executed (${agentConfigured ? 'agent unreachable, used fallback' : 'database fallback'})`,
       source: 'database',
     });
 

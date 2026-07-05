@@ -19,7 +19,8 @@ export type ConfigValueType = 'int' | 'float' | 'string' | 'bool';
 export type ConfigSection = 'gameplay' | 'network' | 'physics' | 'scoring' | 'admin' | 'misc';
 
 export interface ConsoleLine {
-  id: number;
+  id: number | string;
+  server_id?: number;
   timestamp: number;
   type: ConsoleLineType;
   text: string;

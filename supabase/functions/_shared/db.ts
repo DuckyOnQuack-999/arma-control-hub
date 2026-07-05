@@ -66,7 +66,7 @@ export async function requireRole(supabase: SupabaseClient, userId: string, role
   return false;
 }
 
-export async function writeConsoleLine(supabase: SupabaseClient, serverId: number, lineType: string, text: string, source: string): Promise<void> {
+export async function writeConsoleLine(supabase: SupabaseClient, serverId: number, lineType: string, text: string, source: string = 'panel'): Promise<void> {
   await safeDbWrite(
     supabase.from('console_lines').insert({
       server_id: serverId,

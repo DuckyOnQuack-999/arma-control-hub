@@ -63,10 +63,22 @@ const ServerDetailPage = () => {
     setLoading(true);
     try {
       const result = await serverAction(serverId, action);
-      toast({ title: `Server ${action}`, description: result.message });
+      if (result.success) {
+        toast({ title: `Server ${action}`, description: result.message });
+      } else {
+        toast({ title: 'Action failed', description: result.message || 'Unknown error', variant: 'destructive' });
+      }
       refetch();
     } catch (err: any) {
-      toast({ title: 'Action failed', description: err?.message, variant: 'destructive' });
+      const errorMessage = err?.message || err?.toString() || 'Unknown error';
+      const isAgentError = errorMessage.includes('fetch') || errorMessage.includes('network') || errorMessage.includes('timeout');
+      toast({
+        title: isAgentError ? 'Agent Unreachable' : 'Action failed',
+        description: isAgentError
+          ? `Could not reach the host agent at ${server?.agent_url || 'unknown'}. Check that the agent is running and accessible.`
+          : errorMessage,
+        variant: 'destructive',
+      });
     } finally {
       setLoading(false);
     }
