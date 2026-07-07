@@ -1,12 +1,13 @@
 import { ServerConfig, ServerInstance, PortAllocation } from '@rx/shared-types';
-import * as fs from 'fs-extra';
+import * as fs from 'fs';
 import * as path from 'path';
 
-const INSTANCES_BASE_PATH = process.env.INSTANCES_PATH || '/instances';
+const INSTANCES_BASE_PATH = process.env.INSTANCES_PATH || path.resolve(process.cwd(), 'instances');
 const PORT_RANGE_START = parseInt(process.env.PORT_RANGE_START || '4534', 10);
 const PORT_RANGE_END = parseInt(process.env.PORT_RANGE_END || '5000', 10);
 
-const allocatedPorts = new Map<number, string>();
+// Export the allocated ports map for external access
+export const allocatedPorts = new Map<number, string>();
 let nextPort = PORT_RANGE_START;
 
 function ensureInstancesDirectory(): void {
@@ -126,7 +127,7 @@ export function deleteInstance(instanceId: string): void {
     }
   }
 
-  fs.removeSync(instancePath);
+  fs.rmSync(instancePath, { recursive: true, force: true });
 }
 
 export function generateSettings(instanceId: string, config: ServerConfig): void {
@@ -148,12 +149,15 @@ export function generateSettings(instanceId: string, config: ServerConfig): void
     `# Game Mode: ${config.gameMode}`,
     ``,
     `SERVER_NAME ${config.name}`,
-    `SERVER_PORT ${port}`,
+    `PORT ${port}`,
     `MAX_PLAYERS ${config.maxPlayers}`,
-    `GAME_MODE ${config.gameMode}`,
-    `AUTO_RESTART ${config.autoRestart ? '1' : '0'}`,
+    `TALK_TO_MASTER 1`,
     ``,
   ];
+
+  if (config.gameMode) {
+    settings.push(`# Game mode: ${config.gameMode}`);
+  }
 
   if (config.mapRotation && config.mapRotation.length > 0) {
     settings.push(`MAP_ROTATION ${config.mapRotation.join(' ')}`);
@@ -167,6 +171,9 @@ export function generateSettings(instanceId: string, config: ServerConfig): void
     settings.push(``);
   }
 
+  settings.push(`AUTO_RESTART ${config.autoRestart ? '1' : '0'}`);
+
+  fs.mkdirSync(configPath, { recursive: true });
   fs.writeFileSync(settingsPath, settings.join('\n'), { mode: 0o644 });
 }
 
@@ -195,7 +202,7 @@ export function getInstanceConfig(instanceId: string): ServerConfig | null {
       case 'SERVER_NAME':
         config.name = value;
         break;
-      case 'SERVER_PORT':
+      case 'PORT':
         config.maxPlayers = parseInt(value, 10);
         break;
       case 'MAX_PLAYERS':
@@ -211,7 +218,9 @@ export function getInstanceConfig(instanceId: string): ServerConfig | null {
         config.mapRotation = value.split(/\s+/);
         break;
       default:
-        config.customCfg![key] = value;
+        if (config.customCfg) {
+          config.customCfg[key] = value;
+        }
     }
   }
 
@@ -238,4 +247,25 @@ export function getInstanceLogsPath(instanceId: string): string {
 
 export function getInstanceConfigPath(instanceId: string): string {
   return getConfigPath(instanceId);
+}
+
+export function getInstancesBasePath(): string {
+  return INSTANCES_BASE_PATH;
+}
+
+// Factory function
+export function createInstanceFactory(): {
+  create: typeof createInstance;
+  delete: typeof deleteInstance;
+  listInstances: typeof listInstances;
+  getInstanceConfig: typeof getInstanceConfig;
+  allocatedPorts: typeof allocatedPorts;
+} {
+  return {
+    create: createInstance,
+    delete: deleteInstance,
+    listInstances,
+    getInstanceConfig,
+    allocatedPorts,
+  };
 }

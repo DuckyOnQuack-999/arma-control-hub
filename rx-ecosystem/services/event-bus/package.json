@@ -18,7 +18,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@rx/shared-types": "^1.0.0",
+    "@rx/shared-types": "workspace:*",
     "ws": "^8.14.0"
   },
   "devDependencies": {

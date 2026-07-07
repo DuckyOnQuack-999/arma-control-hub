@@ -18,8 +18,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@rx/shared-types": "^1.0.0",
-    "@rx/event-bus": "^1.0.0"
+    "@rx/shared-types": "workspace:*",
+    "@rx/event-bus": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.3.0",

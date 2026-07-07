@@ -1,12 +1,11 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import fastifyCors from '@fastify/cors';
 import fastifyWebsocket from '@fastify/websocket';
-import { createCoreEngine } from '@rx/core-engine';
+import { createCoreEngine, CoreEngine } from '@rx/core-engine';
 import { createEventBus } from '@rx/event-bus';
 import { createAdminCommandService } from '@rx/admin-commands';
-import { createInstanceFactory } from '@rx/instance-factory';
 import { createProcessManager } from '@rx/process-manager';
-import { createMatchEngine } from '@rx/match-engine';
+import { EventBus } from '@rx/event-bus';
 import { randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
 
@@ -39,24 +38,13 @@ async function main() {
 
   await app.register(fastifyWebsocket);
 
-  // Initialize core services
-  const eventBus = createEventBus({ port: EVENT_BUS_PORT });
-  const instanceFactory = createInstanceFactory();
-  const processManager = createProcessManager({ eventBus });
-  const matchEngine = createMatchEngine({ eventBus });
-  const adminCommandService = createAdminCommandService(processManager, eventBus);
-  
-  const coreEngine = createCoreEngine({
-    instanceFactory,
-    processManager,
-    eventBus,
-    matchEngine,
-    adminCommandService,
-  });
-
   // Initialize services
-  await eventBus.start();
+  const eventBus = createEventBus({ port: EVENT_BUS_PORT });
+  const coreEngine = createCoreEngine({ eventBus });
+
+  // Initialize core engine and discover existing instances
   await coreEngine.initialize();
+  await eventBus.start(EVENT_BUS_PORT);
 
   // Auth middleware
   async function authenticate(request: any, reply: any) {
@@ -94,7 +82,7 @@ async function main() {
   // Auth endpoints
   app.post('/auth/login', async (request, reply) => {
     const { username, password } = request.body as { username: string; password: string };
-    
+
     // In production, verify against rx-auth-server or database
     // For now, simple demo authentication
     if (username === 'admin' && password === 'admin') {
@@ -105,7 +93,7 @@ async function main() {
       );
       return { token, user: { id: '1', username: 'admin', role: 'admin' } };
     }
-    
+
     return reply.status(401).send({ error: 'Invalid credentials' });
   });
 
@@ -116,7 +104,7 @@ async function main() {
 
   // Server management endpoints
   app.get('/api/servers', { preHandler: [optionalAuth] }, async (request, reply) => {
-    const servers = await coreEngine.listServers();
+    const servers = coreEngine.listServers();
     return { servers, total: servers.length };
   });
 
@@ -136,7 +124,7 @@ async function main() {
 
     const server = await coreEngine.createServer({
       name,
-      gameMode: (gameMode as any) || 'CTF',
+      gameMode: (gameMode as any) || 'SUMO',
       maxPlayers: maxPlayers || 16,
       mapRotation,
       customCfg,
@@ -148,7 +136,7 @@ async function main() {
 
   app.get('/api/servers/:id', { preHandler: [optionalAuth] }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const server = await coreEngine.getServer(id);
+    const server = coreEngine.getServer(id);
     if (!server) {
       return reply.status(404).send({ error: 'Server not found' });
     }
@@ -157,20 +145,12 @@ async function main() {
 
   app.patch('/api/servers/:id', { preHandler: [authenticate] }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const updates = request.body as Partial<{
-      name: string;
-      gameMode: string;
-      maxPlayers: number;
-      mapRotation: string[];
-      customCfg: Record<string, string>;
-      autoRestart: boolean;
-    }>;
-
-    const server = await coreEngine.updateServer(id, updates);
+    // Update server config - would need to implement
+    const server = coreEngine.getServer(id);
     if (!server) {
       return reply.status(404).send({ error: 'Server not found' });
     }
-    return server;
+    return reply.status(501).send({ error: 'Server update not yet implemented' });
   });
 
   app.delete('/api/servers/:id', { preHandler: [authenticate] }, async (request, reply) => {
@@ -201,62 +181,11 @@ async function main() {
   // Admin command endpoints
   app.post('/api/servers/:id/command', { preHandler: [authenticate] }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { command, args } = request.body as { command: string; args?: string[] };
+    const { command } = request.body as { command: string };
     const user = (request as any).user as JWTPayload;
 
-    const result = await adminCommandService.executeCommand({
-      id: randomUUID(),
-      serverId: id,
-      command: command as any,
-      args: args || [],
-      issuedBy: user.userId,
-      timestamp: new Date(),
-    });
-
+    const result = await coreEngine.sendAdminCommand(id, command);
     return result;
-  });
-
-  app.post('/api/servers/:id/commands/batch', { preHandler: [authenticate] }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const { commands } = request.body as { commands: Array<{ command: string; args?: string[] }> };
-    const user = (request as any).user as JWTPayload;
-
-    const adminCommands = commands.map(cmd => ({
-      id: randomUUID(),
-      serverId: id,
-      command: cmd.command as any,
-      args: cmd.args || [],
-      issuedBy: user.userId,
-      timestamp: new Date(),
-    }));
-
-    const results = await adminCommandService.executeBatch(adminCommands);
-    return { results };
-  });
-
-  app.get('/api/commands', { preHandler: [optionalAuth] }, async (request, reply) => {
-    return { commands: adminCommandService.getAvailableCommands() };
-  });
-
-  // Match endpoints
-  app.post('/api/servers/:id/matches', { preHandler: [authenticate] }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const { mode } = request.body as { mode: 'SUMO' | 'CTF' | 'RACE' };
-
-    const match = await matchEngine.startMatch(id, mode);
-    return reply.status(201).send(match);
-  });
-
-  app.post('/api/matches/:matchs/:matchId/end', { preHandler: [authenticate] }, async (request, reply) => {
-    const { matchId } = request.params as { matchId: string };
-    await matchEngine.endMatch(matchId);
-    return { success: true };
-  });
-
-  app.get('/api/servers/:id/matches', { preHandler: [optionalAuth] }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const matches = await matchEngine.getMatches(id);
-    return { matches };
   });
 
   // Server logs endpoint
@@ -272,7 +201,7 @@ async function main() {
     fastify.get('/ws', { websocket: true }, (connection, request) => {
       const url = new URL(request.url, `http://${request.headers.host}`);
       const token = url.searchParams.get('token');
-      
+
       let user: JWTPayload | null = null;
       if (token) {
         try {
@@ -318,11 +247,24 @@ async function main() {
     });
   });
 
+  // Graceful shutdown
+  const shutdown = async () => {
+    console.log('Shutting down...');
+    await coreEngine.shutdown();
+    await eventBus.stop();
+    await app.close();
+    process.exit(0);
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+
   // Start server
   try {
     await app.listen({ port: PORT, host: '0.0.0.0' });
-    console.log(`🚀 API server running on http://0.0.0.0:${PORT}`);
-    console.log(`🔌 WebSocket available at ws://0.0.0.0:${PORT}/ws`);
+    console.log(`RX-NEXUS API server running on http://0.0.0.0:${PORT}`);
+    console.log(`WebSocket available at ws://0.0.0.0:${PORT}/ws`);
+    console.log(`Event bus listening on port ${EVENT_BUS_PORT}`);
   } catch (err) {
     app.log.error(err);
     process.exit(1);

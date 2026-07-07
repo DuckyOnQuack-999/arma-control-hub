@@ -1,6 +1,10 @@
 import { EventEmitter } from 'events';
 import { Match, MatchStatus, MatchPlayer, AppEvent, MatchEvent } from '@rx/shared-types';
-import { eventBus, EventBus } from '@rx/event-bus';
+import { EventBus, eventBus } from '@rx/event-bus';
+
+export interface MatchEngineOptions {
+  eventBus?: EventBus;
+}
 
 export class MatchEngine extends EventEmitter {
   private matches: Map<string, Match> = new Map();
@@ -57,6 +61,14 @@ export class MatchEngine extends EventEmitter {
     return null;
   }
 
+  getMatches(serverId?: string): Match[] {
+    const matches = Array.from(this.matches.values());
+    if (serverId) {
+      return matches.filter(m => m.serverId === serverId);
+    }
+    return matches;
+  }
+
   addPlayerToMatch(serverId: string, playerName: string, team?: string): void {
     const match = this.matches.get(serverId);
     if (!match || match.status !== 'running') return;
@@ -101,7 +113,14 @@ export class MatchEngine extends EventEmitter {
       data: { matchId: match.id, mode: match.mode },
     };
     this.eventBus.emit(event);
+    this.emit(type, match);
   }
 }
 
+// Singleton instance
 export const matchEngine = new MatchEngine();
+
+// Factory function
+export function createMatchEngine(options?: MatchEngineOptions): MatchEngine {
+  return new MatchEngine(options?.eventBus);
+}

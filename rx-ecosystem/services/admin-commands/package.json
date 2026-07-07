@@ -18,9 +18,9 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@rx/shared-types": "^1.0.0",
-    "@rx/event-bus": "^1.0.0",
-    "@rx/process-manager": "^1.0.0",
+    "@rx/shared-types": "workspace:*",
+    "@rx/event-bus": "workspace:*",
+    "@rx/process-manager": "workspace:*",
     "zod": "^3.22.0"
   },
   "devDependencies": {

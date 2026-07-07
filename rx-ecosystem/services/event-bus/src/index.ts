@@ -25,13 +25,19 @@ export class EventBus extends EventEmitter {
   private wss: WebSocketServer | null = null;
   private clients: Map<string, ClientConnection> = new Map();
   private clientIdCounter = 0;
+  private _port: number = 3002;
 
   constructor() {
     super();
     this.setMaxListeners(1000);
   }
 
+  get port(): number {
+    return this._port;
+  }
+
   start(port: number = 3002): Promise<void> {
+    this._port = port;
     return new Promise((resolve, reject) => {
       this.httpServer = createServer();
       this.wss = new WebSocketServer({ server: this.httpServer });
@@ -120,7 +126,7 @@ export class EventBus extends EventEmitter {
           this.handleAuth(clientId, message as WSAuthMessage);
           break;
         default:
-          this.sendError(clientId, 'UNKNOWN_MESSAGE_TYPE', `Unknown message type: ${message.type}`);
+          this.sendError(clientId, 'UNKNOWN_MESSAGE_TYPE', `Unknown message type: ${(message as any).type}`);
       }
     } catch (error) {
       this.sendError(clientId, 'INVALID_JSON', 'Invalid JSON message');
@@ -192,8 +198,9 @@ export class EventBus extends EventEmitter {
     });
   }
 
-  emit(event: AppEvent): void {
+  emit(event: AppEvent): boolean {
     super.emit(event.type, event);
+    super.emit('*', event);
 
     const eventMessage: WSEventMessage = {
       type: 'event',
@@ -214,6 +221,29 @@ export class EventBus extends EventEmitter {
       if (shouldReceive) {
         this.sendToClient(clientId, eventMessage);
       }
+    }
+
+    return true;
+  }
+
+  subscribe(clientId: string, channel: string): void {
+    const client = this.clients.get(clientId);
+    if (client) {
+      client.subscriptions.add(channel);
+    }
+  }
+
+  unsubscribe(clientId: string, channel: string): void {
+    const client = this.clients.get(clientId);
+    if (client) {
+      client.subscriptions.delete(channel);
+    }
+  }
+
+  unsubscribeAll(clientId: string): void {
+    const client = this.clients.get(clientId);
+    if (client) {
+      client.subscriptions.clear();
     }
   }
 
@@ -238,6 +268,26 @@ export class EventBus extends EventEmitter {
   getClientInfo(clientId: string): ClientConnection | undefined {
     return this.clients.get(clientId);
   }
+
+  on(event: string | symbol, listener: (...args: any[]) => void): this {
+    return super.on(event, listener);
+  }
+
+  off(event: string | symbol, listener: (...args: any[]) => void): this {
+    return super.off(event, listener);
+  }
 }
 
+// Singleton instance
 export const eventBus = new EventBus();
+
+// Factory function for creating new instances
+export function createEventBus(options?: { port?: number }): EventBus {
+  const bus = new EventBus();
+  if (options?.port) {
+    bus.start(options.port).catch(err => {
+      console.error('Failed to start event bus:', err);
+    });
+  }
+  return bus;
+}

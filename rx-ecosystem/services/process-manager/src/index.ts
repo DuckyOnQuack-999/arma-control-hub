@@ -18,11 +18,12 @@ import {
 } from '@rx/shared-types';
 import { EventBus, eventBus } from '@rx/event-bus';
 
-const INSTANCES_BASE_PATH = '/instances';
+const INSTANCES_BASE_PATH = process.env.INSTANCES_PATH || path.resolve(process.cwd(), 'instances');
 
 interface ProcessManagerOptions {
   eventBus?: EventBus;
   armagetronBinary?: string;
+  instancesPath?: string;
 }
 
 export class ProcessManager extends EventEmitter {
@@ -31,12 +32,14 @@ export class ProcessManager extends EventEmitter {
   private logStreams: Map<string, { stdout: fs.WriteStream; stderr: fs.WriteStream }> = new Map();
   private eventBus: EventBus;
   private armagetronBinary: string;
+  private instancesPath: string;
   private resourceMonitorInterval: NodeJS.Timeout | null = null;
 
   constructor(options: ProcessManagerOptions = {}) {
     super();
     this.eventBus = options.eventBus || eventBus;
     this.armagetronBinary = options.armagetronBinary || 'armagetronad-dedicated';
+    this.instancesPath = options.instancesPath || INSTANCES_BASE_PATH;
     this.startResourceMonitoring();
   }
 
@@ -97,17 +100,21 @@ export class ProcessManager extends EventEmitter {
     this.eventBus.emit(event);
   }
 
-  async start(instanceId: string, config: ServerConfig): Promise<void> {
+  async start(instanceId: string, config: ServerConfig & { port?: number }): Promise<void> {
     if (this.processes.has(instanceId)) {
       throw new Error(`Server ${instanceId} is already running`);
     }
 
-    const instancePath = path.join(INSTANCES_BASE_PATH, instanceId);
+    const instancePath = path.join(this.instancesPath, instanceId);
     const configPath = path.join(instancePath, 'config', 'settings.cfg');
     const logsPath = path.join(instancePath, 'logs');
 
     if (!fs.existsSync(configPath)) {
-      throw new Error(`Config not found for instance ${instanceId}`);
+      // Try alternate config location
+      const altConfigPath = path.join(instancePath, 'config', 'settings_custom.cfg');
+      if (!fs.existsSync(altConfigPath)) {
+        throw new Error(`Config not found for instance ${instanceId}`);
+      }
     }
 
     this.updateState(instanceId, 'starting');
@@ -115,6 +122,7 @@ export class ProcessManager extends EventEmitter {
     const stdoutPath = path.join(logsPath, 'stdout.log');
     const stderrPath = path.join(logsPath, 'stderr.log');
 
+    fs.mkdirSync(logsPath, { recursive: true });
     const stdoutStream = fs.createWriteStream(stdoutPath, { flags: 'a' });
     const stderrStream = fs.createWriteStream(stderrPath, { flags: 'a' });
 
@@ -126,7 +134,11 @@ export class ProcessManager extends EventEmitter {
       env: { ...process.env, HOME: instancePath },
     };
 
-    const args = ['--config', configPath];
+    const args = ['--vardir', instancePath];
+
+    if (fs.existsSync(configPath)) {
+      args.push('--config', configPath);
+    }
 
     const childProcess = spawn(this.armagetronBinary, args, spawnOptions);
 
@@ -168,6 +180,12 @@ export class ProcessManager extends EventEmitter {
   }
 
   private handleLogLine(instanceId: string, line: string, level: 'info' | 'warn' | 'error' = 'info'): void {
+    // Write to log file
+    const streams = this.logStreams.get(instanceId);
+    if (streams) {
+      streams.stdout.write(`${line}\n`);
+    }
+
     const logEvent: LogEvent = {
       type: 'log',
       timestamp: new Date(),
@@ -190,6 +208,7 @@ export class ProcessManager extends EventEmitter {
       return {
         type: 'player_join',
         timestamp,
+        serverId: instanceId,
         playerName: playerJoinMatch[1],
         raw: line,
       };
@@ -200,6 +219,7 @@ export class ProcessManager extends EventEmitter {
       return {
         type: 'player_leave',
         timestamp,
+        serverId: instanceId,
         playerName: playerLeaveMatch[1],
         raw: line,
       };
@@ -210,6 +230,7 @@ export class ProcessManager extends EventEmitter {
       return {
         type: 'map_change',
         timestamp,
+        serverId: instanceId,
         mapName: mapChangeMatch[1],
         raw: line,
       };
@@ -220,6 +241,7 @@ export class ProcessManager extends EventEmitter {
       return {
         type: 'match_start',
         timestamp,
+        serverId: instanceId,
         raw: line,
       };
     }
@@ -229,6 +251,7 @@ export class ProcessManager extends EventEmitter {
       return {
         type: 'match_end',
         timestamp,
+        serverId: instanceId,
         raw: line,
       };
     }
@@ -236,6 +259,7 @@ export class ProcessManager extends EventEmitter {
     return {
       type: 'unknown',
       timestamp,
+      serverId: instanceId,
       raw: line,
     };
   }
@@ -246,7 +270,7 @@ export class ProcessManager extends EventEmitter {
         const event: PlayerEvent = {
           type: 'player:join',
           timestamp: entry.timestamp,
-          serverId: entry.serverId,
+          serverId: entry.serverId!,
           data: { playerName: entry.playerName!, ip: entry.ip },
         };
         this.eventBus.emit(event);
@@ -256,7 +280,7 @@ export class ProcessManager extends EventEmitter {
         const event: PlayerEvent = {
           type: 'player:leave',
           timestamp: entry.timestamp,
-          serverId: entry.serverId,
+          serverId: entry.serverId!,
           data: { playerName: entry.playerName!, ip: entry.ip },
         };
         this.eventBus.emit(event);
@@ -266,7 +290,7 @@ export class ProcessManager extends EventEmitter {
         const event: MapChangeEvent = {
           type: 'map:change',
           timestamp: entry.timestamp,
-          serverId: entry.serverId,
+          serverId: entry.serverId!,
           data: { mapName: entry.mapName! },
         };
         this.eventBus.emit(event);
@@ -276,7 +300,7 @@ export class ProcessManager extends EventEmitter {
         const event: MatchEvent = {
           type: 'match:start',
           timestamp: entry.timestamp,
-          serverId: entry.serverId,
+          serverId: entry.serverId!,
           data: { matchId: crypto.randomUUID(), mode: 'UNKNOWN' },
         };
         this.eventBus.emit(event);
@@ -286,7 +310,7 @@ export class ProcessManager extends EventEmitter {
         const event: MatchEvent = {
           type: 'match:end',
           timestamp: entry.timestamp,
-          serverId: entry.serverId,
+          serverId: entry.serverId!,
           data: { matchId: crypto.randomUUID(), mode: 'UNKNOWN' },
         };
         this.eventBus.emit(event);
@@ -341,6 +365,13 @@ export class ProcessManager extends EventEmitter {
 
     this.updateState(instanceId, 'stopping');
 
+    // Try graceful shutdown first by sending QUIT command
+    try {
+      childProcess.stdin?.write('QUIT\n');
+    } catch {
+      // stdin might be closed
+    }
+
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (!childProcess.killed) {
@@ -356,7 +387,12 @@ export class ProcessManager extends EventEmitter {
         resolve();
       });
 
-      childProcess.kill(signal);
+      // Give the server 5 seconds to gracefully shutdown before SIGTERM
+      setTimeout(() => {
+        if (!childProcess.killed) {
+          childProcess.kill(signal);
+        }
+      }, 5000);
     });
   }
 
@@ -366,17 +402,17 @@ export class ProcessManager extends EventEmitter {
     await this.start(instanceId, config);
   }
 
-  sendCommand(instanceId: string, command: string): boolean {
+  sendCommand(instanceId: string, command: string): Promise<{ success: boolean; output?: string; error?: string }> {
     const childProcess = this.processes.get(instanceId);
     if (!childProcess || !childProcess.stdin) {
-      return false;
+      return Promise.resolve({ success: false, error: 'Server not running' });
     }
 
     try {
       childProcess.stdin.write(`${command}\n`);
-      return true;
-    } catch {
-      return false;
+      return Promise.resolve({ success: true, output: `Command sent: ${command}` });
+    } catch (error) {
+      return Promise.resolve({ success: false, error: String(error) });
     }
   }
 
@@ -456,4 +492,10 @@ export class ProcessManager extends EventEmitter {
   }
 }
 
+// Singleton instance
 export const processManager = new ProcessManager();
+
+// Factory function
+export function createProcessManager(options?: ProcessManagerOptions): ProcessManager {
+  return new ProcessManager(options);
+}
