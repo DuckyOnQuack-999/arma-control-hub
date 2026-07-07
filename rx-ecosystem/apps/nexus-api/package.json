@@ -1,0 +1,35 @@
+{
+  "name": "@rx/nexus-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "^9.0.1",
+    "@fastify/websocket": "^8.3.1",
+    "@rx/shared-types": "workspace:*",
+    "@rx/core-engine": "workspace:*",
+    "@rx/admin-commands": "workspace:*",
+    "@rx/event-bus": "workspace:*",
+    "@rx/instance-factory": "workspace:*",
+    "@rx/process-manager": "workspace:*",
+    "@rx/match-engine": "workspace:*",
+    "fastify": "^4.26.2",
+    "fastify-plugin": "^4.5.1",
+    "jsonwebtoken": "^9.0.2",
+    "pino": "^8.19.0",
+    "pino-pretty": "^11.0.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/node": "^20.11.24",
+    "tsx": "^4.7.1",
+    "typescript": "^5.3.3"
+  }
+}
