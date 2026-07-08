@@ -3,6 +3,7 @@ export interface ServerConfig {
   name: string;
   gameMode: 'CTF' | 'SUMO' | 'RACE' | 'DOGFIGHT' | 'CUSTOM';
   maxPlayers: number;
+  port?: number;
   mapRotation?: string[];
   customCfg?: Record<string, string>;
   autoRestart?: boolean;

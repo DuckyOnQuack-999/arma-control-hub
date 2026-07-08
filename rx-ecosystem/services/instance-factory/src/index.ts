@@ -177,7 +177,7 @@ export function generateSettings(instanceId: string, config: ServerConfig): void
   fs.writeFileSync(settingsPath, settings.join('\n'), { mode: 0o644 });
 }
 
-export function getInstanceConfig(instanceId: string): ServerConfig | null {
+export function getInstanceConfig(instanceId: string): (ServerConfig & { port?: number }) | null {
   const settingsPath = path.join(getConfigPath(instanceId), 'settings.cfg');
 
   if (!fs.existsSync(settingsPath)) {
@@ -187,7 +187,7 @@ export function getInstanceConfig(instanceId: string): ServerConfig | null {
   const content = fs.readFileSync(settingsPath, 'utf-8');
   const lines = content.split('\n');
 
-  const config: Partial<ServerConfig> = {
+  const config: Partial<ServerConfig> & { port?: number } = {
     customCfg: {},
   };
 
@@ -203,7 +203,7 @@ export function getInstanceConfig(instanceId: string): ServerConfig | null {
         config.name = value;
         break;
       case 'PORT':
-        config.maxPlayers = parseInt(value, 10);
+        config.port = parseInt(value, 10);
         break;
       case 'MAX_PLAYERS':
         config.maxPlayers = parseInt(value, 10);
@@ -224,7 +224,7 @@ export function getInstanceConfig(instanceId: string): ServerConfig | null {
     }
   }
 
-  return config as ServerConfig;
+  return config as ServerConfig & { port?: number };
 }
 
 export function listInstances(): string[] {

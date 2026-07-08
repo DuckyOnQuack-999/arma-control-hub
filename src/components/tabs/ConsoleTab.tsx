@@ -4,7 +4,7 @@ import { sendCommand } from '@/lib/supabaseApi';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Trash2, Download, Wifi, WifiOff, RefreshCw } from 'lucide-react';
+import { Trash2, Download, Wifi, WifiOff, RefreshCw, CircleHelp as HelpCircle, X, Terminal } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ConsoleLine, ConsoleLineType } from '@/data/types';
 import { toast } from '@/hooks/use-toast';
@@ -33,6 +33,28 @@ const ARMA_COMMANDS = [
 
 const UNIQUE_COMMANDS = [...new Set(ARMA_COMMANDS)].sort();
 
+// Command quick reference
+const COMMAND_HELP: Record<string, { syntax: string; description: string }> = {
+  PLAYERS: { syntax: 'PLAYERS', description: 'List all connected players' },
+  KICK: { syntax: 'KICK <player>', description: 'Kick a player from the server' },
+  BAN: { syntax: 'BAN <player> [duration]', description: 'Ban a player (optional duration in minutes)' },
+  BAN_IP: { syntax: 'BAN_IP <ip>', description: 'Ban an IP address' },
+  UNBAN: { syntax: 'UNBAN <player>', description: 'Unban a player' },
+  UNBAN_IP: { syntax: 'UNBAN_IP <ip>', description: 'Unban an IP address' },
+  SILENCE: { syntax: 'SILENCE <player>', description: 'Silence a player (mute chat)' },
+  VOICE: { syntax: 'VOICE <player>', description: 'Give voice back to a silenced player' },
+  SAY: { syntax: 'SAY <message>', description: 'Send a chat message to all players' },
+  CENTER_MESSAGE: { syntax: 'CENTER_MESSAGE <message>', description: 'Display a centered message' },
+  CONSOLE_MESSAGE: { syntax: 'CONSOLE_MESSAGE <message>', description: 'Show message in console' },
+  LOGIN: { syntax: 'LOGIN <password>', description: 'Login as admin' },
+  LOGOUT: { syntax: 'LOGOUT', description: 'Logout from admin' },
+  QUIT: { syntax: 'QUIT', description: 'Gracefully shutdown the server' },
+  SHUTDOWN: { syntax: 'SHUTDOWN', description: 'Shutdown the server' },
+  RESTART: { syntax: 'RESTART', description: 'Restart the current match' },
+  INCLUDE: { syntax: 'INCLUDE <file>', description: 'Execute a config file' },
+  RINCLUDE: { syntax: 'RINCLUDE <file>', description: 'Execute config from resource dir' },
+};
+
 let lineIdCounter = 100;
 
 export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; agentUrl?: string | null }) {
@@ -41,6 +63,7 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
   const [connected, setConnected] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -219,6 +242,7 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
       {/* Toolbar */}
       <div className="flex items-center justify-between p-2 border-b bg-card">
         <div className="flex items-center gap-2">
+          <Terminal className="h-4 w-4 text-primary" />
           {connected ? (
             <Wifi className="h-4 w-4 text-success" />
           ) : (
@@ -229,6 +253,15 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
           </span>
         </div>
         <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowHelp(!showHelp)}
+            className={cn(showHelp && 'text-primary')}
+            title="Command Reference"
+          >
+            <HelpCircle className="h-4 w-4" />
+          </Button>
           <Button variant="ghost" size="sm" onClick={handleDownload} title="Download">
             <Download className="h-4 w-4" />
           </Button>
@@ -246,6 +279,30 @@ export default function ConsoleTab({ serverId, agentUrl }: { serverId: number; a
           </Button>
         </div>
       </div>
+
+      {/* Help Panel */}
+      {showHelp && (
+        <div className="border-b bg-card/50 p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-medium text-foreground">Quick Command Reference</h4>
+            <Button variant="ghost" size="sm" onClick={() => setShowHelp(false)}>
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+          <div className="grid gap-1.5 text-xs max-h-48 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
+            {Object.entries(COMMAND_HELP).map(([cmd, info]) => (
+              <div key={cmd} className="p-2 rounded bg-muted/50 space-y-0.5 hover:bg-muted transition-colors cursor-pointer" onClick={() => {
+                setCommand(info.syntax + ' ');
+                setShowHelp(false);
+                inputRef.current?.focus();
+              }}>
+                <div className="font-mono text-primary">{info.syntax}</div>
+                <div className="text-muted-foreground">{info.description}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Output */}
       <div

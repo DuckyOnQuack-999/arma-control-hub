@@ -93,7 +93,10 @@ Deno.serve(async (req) => {
     if (server.agent_url && validateAgentUrl(server.agent_url)) {
       try {
         const agentUrl = server.agent_url.replace(/\/$/, '');
-        const agentToken = server.agent_token || 'default-agent-token';
+        const agentToken = server.agent_token || Deno.env.get('AGENT_TOKEN') || '';
+        if (!agentToken) {
+          console.warn('No agent token configured - set AGENT_TOKEN env var or server.agent_token');
+        }
         const serverIdStr = String(serverId);
 
         let agentResp: Response;

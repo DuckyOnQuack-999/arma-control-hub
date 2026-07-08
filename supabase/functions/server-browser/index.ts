@@ -21,6 +21,22 @@ const MASTER_SERVERS = [
   { host: 'master3.armagetronad.net', port: 4533 },
 ];
 
+// SSRF protection: whitelist of allowed domains for scraping
+const ALLOWED_SCRAPE_DOMAINS = [
+  'stats.retrocycles.net',
+  'www.armagetronad.net',
+  'armagetronad.net',
+];
+
+function isAllowedScrapeUrl(urlString: string): boolean {
+  try {
+    const url = new URL(urlString);
+    return ALLOWED_SCRAPE_DOMAINS.includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 const QUERY_TIMEOUT = 5000;
 const CACHE_TTL = 30000; // 30 seconds
 
@@ -47,7 +63,7 @@ Deno.serve(async (req) => {
     if (agentUrlParam && validateAgentUrl(agentUrlParam)) {
       try {
         const agentUrl = agentUrlParam.replace(/\/$/, '');
-        const agentToken = 'default-agent-token';
+        const agentToken = Deno.env.get('AGENT_TOKEN') || '';
 
         if (ip && port) {
           // Query specific server
@@ -94,6 +110,11 @@ Deno.serve(async (req) => {
     ];
 
     for (const url of scrapeUrls) {
+      // SSRF protection: validate URL is in whitelist
+      if (!isAllowedScrapeUrl(url)) {
+        console.warn(`Blocked non-whitelisted scrape URL: ${url}`);
+        continue;
+      }
       try {
         const resp = await fetch(url, {
           signal: AbortSignal.timeout(10000),
